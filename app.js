@@ -186,6 +186,9 @@ class AIChatApp {
     this.importFromClipboardBtn = document.getElementById("import-from-clipboard-btn");
     this.cancelImportBtn = document.getElementById("cancel-import-btn");
     this.createChatFromImportBtn = document.getElementById("create-chat-from-import-btn");
+    this.importDictionaryBtn = document.getElementById("import-dictionary-btn");
+    this.dictionaryImportInput = document.getElementById("dictionary-import-input");
+    this.exportDictionaryBtn = document.getElementById("export-dictionary-btn");
   }
 
   bindEvents() {
@@ -247,6 +250,9 @@ class AIChatApp {
     this.fileInput.addEventListener("change", (e) => this.handleFileImport(e));
     this.importFromClipboardBtn.addEventListener("click", () => this.handleClipboardImport());
     this.createChatFromImportBtn.addEventListener("click", () => this.createChatFromImport());
+    this.importDictionaryBtn.addEventListener("click", () => this.dictionaryImportInput.click());
+    this.dictionaryImportInput.addEventListener("change", (e) => this.importDictionary(e));
+    this.exportDictionaryBtn.addEventListener("click", () => this.exportDictionary());
   }
 
   adjustTextareaHeight() {
@@ -1242,6 +1248,68 @@ class AIChatApp {
       this.renderChatList();
       this.hideImportTextModal();
       this.importTextArea.value = ""; // Clear textarea after import
+  }
+
+  async exportDictionary() {
+    try {
+      const allWords = await this.db.getAll('word_meanings');
+      if (allWords.length === 0) {
+        alert("Your dictionary is empty.");
+        return;
+      }
+      const dataStr = JSON.stringify(allWords, null, 2);
+      const dataBlob = new Blob([dataStr], {type: "application/json"});
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'ai_chat_dictionary.json';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      alert("Dictionary exported successfully!");
+    } catch (error) {
+      console.error("Error exporting dictionary:", error);
+      alert("Failed to export dictionary.");
+    }
+  }
+
+  async importDictionary(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.type !== "application/json") {
+      alert("Please upload a .json file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const words = JSON.parse(e.target.result);
+        if (!Array.isArray(words)) {
+          throw new Error("Invalid JSON format. Expected an array of words.");
+        }
+        let importedCount = 0;
+        let skippedCount = 0;
+        for (const wordData of words) {
+          if (wordData.word && wordData.value) {
+            await this.db.set('word_meanings', wordData);
+            importedCount++;
+          } else {
+            skippedCount++;
+          }
+        }
+        alert(`Dictionary import complete!\nImported: ${importedCount}\nSkipped: ${skippedCount}`);
+      } catch (error) {
+        console.error("Error importing dictionary:", error);
+        alert(`Failed to import dictionary: ${error.message}`);
+      }
+    };
+    reader.onerror = (error) => {
+      console.error("File reading error:", error);
+      alert("Failed to read the file.");
+    };
+    reader.readAsText(file);
+    event.target.value = '';
   }
 }
 
