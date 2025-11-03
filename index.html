@@ -9,6 +9,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
   <button id="translate-selection-btn" class="floating-btn hidden">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6.2c.4.2.6.7.4 1.1l-3.2 7.2c-.2.5-.6.8-1.1.8H6.8c-.5 0-.9-.3-1.1-.8L2.4 7.3c-.2-.4 0-.9.4-1.1l7.2-3.2c.5-.2.9 0 1.1.4L14 7l2-3.5-2-3.5 4.5 2.2z"></path><path d="M12 22v-6"></path></svg>
     Translate
@@ -17,17 +20,6 @@
   <div id="loading-screen" class="loading-screen">
     <div class="spinner"></div>
     <p>Loading AI Chat...</p>
-  </div>
-
-  <div id="api-modal" class="modal hidden">
-    <div class="modal-content">
-      <h2>🔑 Google Gemini API Key</h2>
-      <p>Please enter your Gemini API key:</p>
-      <input type="password" id="api-key-input" placeholder="AIzaSyC1...">
-      <div class="modal-buttons">
-        <button id="save-api-key" class="btn-primary">Save Key</button>
-      </div>
-    </div>
   </div>
 
   <div id="chat-name-modal" class="modal hidden">
@@ -64,29 +56,38 @@
       <h2>⚙️ Settings</h2>
       
       <div class="setting-section">
-        <p>Chat Provider:</p>
+        <p>AI Provider:</p>
         <select id="chat-provider-select" class="settings-select">
-            <option value="gemini">Gemini</option>
-            <option value="avalai">Avalai (gpt-5-nano)</option>
+            <option value="gemini">Provider 1</option>
+            <option value="avalai">Provider 2</option>
         </select>
       </div>
       
       <div class="setting-section">
-        <p>Text-to-Speech (TTS) Provider:</p>
+        <p>Text-to-Speech Provider:</p>
         <select id="tts-provider-select" class="settings-select">
-            <option value="gemini">Gemini</option>
-            <option value="avalai">Avalai (gpt-4o-mini-tts)</option>
+            <option value="gemini">Provider 1</option>
+            <option value="avalai">Provider 2</option>
         </select>
       </div>
 
       <div class="setting-section">
-          <p>Google Gemini API key:</p>
-          <input type="password" id="new-api-key-input" placeholder="AIzaSy...">
+          <p>API Key (Provider 1):</p>
+          <input type="password" id="new-api-key-input" placeholder="Enter your API key...">
       </div>
       <div class="setting-section">
-          <p>Avalai API key:</p>
-          <input type="password" id="avalai-api-key-input" placeholder="avalai-...">
+          <p>API Key (Provider 2):</p>
+          <input type="password" id="avalai-api-key-input" placeholder="Enter your API key...">
       </div>
+      
+      <div class="setting-section">
+          <p>Theme:</p>
+          <select id="theme-select" class="settings-select">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+      </div>
+      
       <div class="setting-section">
           <p>Dictionary:</p>
           <div class="modal-buttons">
@@ -244,8 +245,12 @@
           <h2 id="chat-title">New Chat</h2>
         </div>
         <div class="chat-actions">
-          <button id="header-leitner-btn" class="btn-icon" title="Flashcards">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+          <button id="current-chat-leitner-btn" class="btn-icon" title="Review This Chat's Words">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+              <path d="M7 15h5"></path>
+              <path d="M7 11h10"></path>
+            </svg>
           </button>
           <button id="header-new-chat-btn" class="btn-icon" title="New Chat">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -271,6 +276,14 @@
 
       <div class="input-area">
         <div class="input-container">
+          <button id="voice-btn" class="btn-voice" title="Voice Input">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
           <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
           <button id="send-btn" class="btn-send">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
