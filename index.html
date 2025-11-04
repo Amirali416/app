@@ -108,6 +108,25 @@
         </div>
         
         <div class="setting-section">
+            <p>Font Size:</p>
+            <select id="font-size-select" class="settings-select">
+              <option value="small">Small</option>
+              <option value="medium">Medium (Default)</option>
+              <option value="large">Large</option>
+              <option value="xlarge">Extra Large</option>
+            </select>
+            <small style="color: #666; display: block; margin-top: 5px;">Affects chat messages, documents, and popups</small>
+        </div>
+        
+        <div class="setting-section">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="bold-text-checkbox" style="cursor: pointer;">
+              <span>Bold Text (All Messages)</span>
+            </label>
+            <small style="color: #666; display: block; margin-top: 5px;">Makes all message text bold for better readability</small>
+        </div>
+        
+        <div class="setting-section">
             <p>Dictionary:</p>
             <div class="modal-buttons">
               <button id="import-dictionary-btn" class="btn-secondary">Import Dictionary</button>
@@ -218,13 +237,13 @@
                 </div>
             </div>
             <div id="leitner-initial-controls">
-                <button id="show-answer-btn" class="btn-primary">Show Answer</button>
+                <button id="show-answer-btn" class="btn-primary">Show Answer <small style="opacity: 0.7; font-size: 11px;">(Space/Enter)</small></button>
             </div>
             <div id="leitner-rating-controls" class="hidden">
-                <button class="btn-leitner-rating" id="rating-again">Again <small></small></button>
-                <button class="btn-leitner-rating" id="rating-hard">Hard <small></small></button>
-                <button class="btn-leitner-rating" id="rating-good">Good <small></small></button>
-                <button class="btn-leitner-rating" id="rating-easy">Easy <small></small></button>
+                <button class="btn-leitner-rating" id="rating-again">Again <small>1</small></button>
+                <button class="btn-leitner-rating" id="rating-hard">Hard <small>2</small></button>
+                <button class="btn-leitner-rating" id="rating-good">Good <small>3</small></button>
+                <button class="btn-leitner-rating" id="rating-easy">Easy <small>4</small></button>
             </div>
         </div>
         <div id="leitner-finished-screen" class="hidden">
