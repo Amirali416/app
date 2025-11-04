@@ -1,3 +1,168 @@
+// --- Notification Manager for Toast Messages (replaces alert) ---
+class NotificationManager {
+  constructor() {
+    this.container = null;
+    this.init();
+  }
+
+  init() {
+    // Create container for notifications
+    this.container = document.createElement('div');
+    this.container.id = 'notification-container';
+    this.container.className = 'notification-container';
+    document.body.appendChild(this.container);
+  }
+
+  show(message, type = 'info', duration = 4000) {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    
+    // Icon based on type
+    const icons = {
+      success: '✓',
+      error: '✕',
+      warning: '⚠',
+      info: 'ℹ'
+    };
+    
+    notification.innerHTML = `
+      <div class="notification-icon">${icons[type] || icons.info}</div>
+      <div class="notification-message">${message}</div>
+    `;
+    
+    this.container.appendChild(notification);
+    
+    // Trigger animation
+    setTimeout(() => notification.classList.add('notification-show'), 10);
+    
+    // Auto remove
+    setTimeout(() => {
+      notification.classList.remove('notification-show');
+      setTimeout(() => notification.remove(), 300);
+    }, duration);
+  }
+
+  success(message, duration) {
+    this.show(message, 'success', duration);
+  }
+
+  error(message, duration) {
+    this.show(message, 'error', duration);
+  }
+
+  warning(message, duration) {
+    this.show(message, 'warning', duration);
+  }
+
+  info(message, duration) {
+    this.show(message, 'info', duration);
+  }
+}
+
+// --- Dialog Manager for Confirm/Prompt (replaces confirm/prompt) ---
+class DialogManager {
+  constructor() {
+    this.overlay = null;
+    this.init();
+  }
+
+  init() {
+    // Create overlay for dialogs
+    this.overlay = document.createElement('div');
+    this.overlay.id = 'dialog-overlay';
+    this.overlay.className = 'dialog-overlay';
+    document.body.appendChild(this.overlay);
+  }
+
+  async confirm(message, title = 'Confirm') {
+    return new Promise((resolve) => {
+      const dialog = document.createElement('div');
+      dialog.className = 'dialog-box dialog-confirm';
+      dialog.innerHTML = `
+        <div class="dialog-header">${title}</div>
+        <div class="dialog-body">${message}</div>
+        <div class="dialog-footer">
+          <button class="dialog-btn dialog-btn-cancel">Cancel</button>
+          <button class="dialog-btn dialog-btn-confirm">Confirm</button>
+        </div>
+      `;
+      
+      this.overlay.appendChild(dialog);
+      this.overlay.classList.add('dialog-overlay-show');
+      setTimeout(() => dialog.classList.add('dialog-show'), 10);
+      
+      const cleanup = (result) => {
+        dialog.classList.remove('dialog-show');
+        this.overlay.classList.remove('dialog-overlay-show');
+        setTimeout(() => {
+          dialog.remove();
+        }, 300);
+        resolve(result);
+      };
+      
+      dialog.querySelector('.dialog-btn-confirm').onclick = () => cleanup(true);
+      dialog.querySelector('.dialog-btn-cancel').onclick = () => cleanup(false);
+      this.overlay.onclick = (e) => {
+        if (e.target === this.overlay) cleanup(false);
+      };
+    });
+  }
+
+  async prompt(message, defaultValue = '', title = 'Input') {
+    return new Promise((resolve) => {
+      const dialog = document.createElement('div');
+      dialog.className = 'dialog-box dialog-prompt';
+      dialog.innerHTML = `
+        <div class="dialog-header">${title}</div>
+        <div class="dialog-body">
+          <div class="dialog-message">${message}</div>
+          <input type="text" class="dialog-input" value="${defaultValue}" />
+        </div>
+        <div class="dialog-footer">
+          <button class="dialog-btn dialog-btn-cancel">Cancel</button>
+          <button class="dialog-btn dialog-btn-confirm">OK</button>
+        </div>
+      `;
+      
+      this.overlay.appendChild(dialog);
+      this.overlay.classList.add('dialog-overlay-show');
+      setTimeout(() => dialog.classList.add('dialog-show'), 10);
+      
+      const input = dialog.querySelector('.dialog-input');
+      input.focus();
+      input.select();
+      
+      const cleanup = (result) => {
+        dialog.classList.remove('dialog-show');
+        this.overlay.classList.remove('dialog-overlay-show');
+        setTimeout(() => {
+          dialog.remove();
+        }, 300);
+        resolve(result);
+      };
+      
+      const submit = () => {
+        const value = input.value.trim();
+        cleanup(value || null);
+      };
+      
+      dialog.querySelector('.dialog-btn-confirm').onclick = submit;
+      dialog.querySelector('.dialog-btn-cancel').onclick = () => cleanup(null);
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') submit();
+        if (e.key === 'Escape') cleanup(null);
+      };
+      this.overlay.onclick = (e) => {
+        if (e.target === this.overlay) cleanup(null);
+      };
+    });
+  }
+}
+
+// Global instances
+const notificationManager = new NotificationManager();
+const dialogManager = new DialogManager();
+
 // --- Database Helper for Caching ---
 class CacheDB {
   constructor(dbName = "AIChatCache", version = 6) {
@@ -111,6 +276,17 @@ class CacheDB {
     });
   }
 
+  async delete(storeName, key) {
+    if (!this.db) await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(storeName, "readwrite");
+      const store = transaction.objectStore(storeName);
+      const request = store.delete(key);
+      request.onsuccess = () => resolve();
+      request.onerror = (event) => { console.error(`Error deleting data from ${storeName}:`, event.target.error); reject(event.target.error); };
+    });
+  }
+
   async clearStore(storeName) {
     if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
@@ -133,6 +309,8 @@ class AIChatApp {
     this.chatProvider = localStorage.getItem("chat_provider") || "gemini";
     this.ttsProvider = localStorage.getItem("tts_provider") || "gemini";
     this.theme = localStorage.getItem("theme") || "light";
+    this.fontSize = localStorage.getItem("font_size") || "medium";
+    this.boldText = localStorage.getItem("bold_text") === "true";
     this.chats = JSON.parse(localStorage.getItem("chats")) || [];
     try {
       this.documents = JSON.parse(localStorage.getItem("documents")) || [];
@@ -156,6 +334,10 @@ class AIChatApp {
   this.currentLeitnerScope = this.getGlobalScope();
   this.leitnerDueCache = new Map();
   this.currentScopeCards = [];
+  
+  // Global highlighting system
+  this.highlightObserver = null;
+  this.highlightDebounceTimer = null;
 
     this.activePopups = [];
     this.baseZIndex = 1002;
@@ -183,6 +365,15 @@ class AIChatApp {
     
     // Apply saved theme
     this.applyTheme(this.theme);
+    
+    // Apply saved font size
+    this.applyFontSize(this.fontSize);
+    
+    // Apply saved bold text setting
+    this.applyBoldText(this.boldText);
+    
+    // Initialize global highlighting system
+    this.initGlobalHighlighting();
     
     const style = document.createElement('style');
     // **MODIFIED STYLES FOR CARD BACK**
@@ -238,6 +429,8 @@ class AIChatApp {
     this.chatProviderSelect = document.getElementById("chat-provider-select");
     this.ttsProviderSelect = document.getElementById("tts-provider-select");
     this.themeSelect = document.getElementById("theme-select");
+    this.fontSizeSelect = document.getElementById("font-size-select");
+    this.boldTextCheckbox = document.getElementById("bold-text-checkbox");
     this.saveSettingsBtn = document.getElementById("save-settings");
     this.cancelSettingsBtn = document.getElementById("cancel-settings");
     this.app = document.getElementById("app");
@@ -363,8 +556,8 @@ class AIChatApp {
             const messageId = messageWrapper.id;
             const player = this.activeTTSPlayers.get(messageId);
             
-            // If TTS is playing/paused, allow jumping to word
-            if (player && (player.isPlaying || player.isPaused)) {
+            // If actively playing (not paused), jump to word
+            if (player && player.isPlaying && !player.isPaused) {
               e.preventDefault();
               e.stopPropagation();
               
@@ -378,7 +571,7 @@ class AIChatApp {
             }
           }
           
-          // Normal word meaning lookup
+          // Normal word meaning lookup (when paused/stopped/no player)
           e.preventDefault();
           e.stopPropagation();
           this.showWordMeaning(word);
@@ -415,6 +608,43 @@ class AIChatApp {
     this.ratingGoodBtn.addEventListener("click", () => this.rateCard(3));
     this.ratingEasyBtn.addEventListener("click", () => this.rateCard(4));
     this.leitnerFinishedOkBtn.addEventListener("click", () => this.closeLeitnerModal());
+    
+    // Keyboard shortcuts for Leitner
+    document.addEventListener('keydown', (e) => {
+      // Only handle shortcuts when Leitner modal is open
+      if (this.leitnerModal.classList.contains('hidden')) return;
+      
+      // Space or Enter to flip card
+      if ((e.key === ' ' || e.key === 'Enter') && !this.leitnerCard.classList.contains('is-flipped')) {
+        e.preventDefault();
+        this.flipCard();
+        return;
+      }
+      
+      // Rating shortcuts (only when card is flipped)
+      if (this.leitnerCard.classList.contains('is-flipped')) {
+        if (e.key === '1') {
+          e.preventDefault();
+          this.rateCard(1); // Again
+        } else if (e.key === '2') {
+          e.preventDefault();
+          this.rateCard(2); // Hard
+        } else if (e.key === '3') {
+          e.preventDefault();
+          this.rateCard(3); // Good
+        } else if (e.key === '4') {
+          e.preventDefault();
+          this.rateCard(4); // Easy
+        }
+      }
+      
+      // Escape to close modal
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.closeLeitnerModal();
+      }
+    });
+    
     this.importChatBtn.addEventListener("click", () => this.showImportTextModal());
     this.cancelImportBtn.addEventListener("click", () => this.hideImportTextModal());
     this.importTextModal.addEventListener("click", (e) => { if (e.target === this.importTextModal) this.hideImportTextModal(); });
@@ -527,6 +757,8 @@ class AIChatApp {
     this.chatProviderSelect.value = this.chatProvider;
     this.ttsProviderSelect.value = this.ttsProvider;
     this.themeSelect.value = this.theme;
+    this.fontSizeSelect.value = this.fontSize;
+    this.boldTextCheckbox.checked = this.boldText;
     this.settingsModal.classList.remove("hidden");
   }
 
@@ -539,6 +771,9 @@ class AIChatApp {
     const chatProvider = this.chatProviderSelect.value;
     const ttsProvider = this.ttsProviderSelect.value;
     const theme = this.themeSelect.value;
+    const fontSize = this.fontSizeSelect.value;
+    const boldText = this.boldTextCheckbox.checked;
+    
     localStorage.setItem("gemini_api_key", geminiKey);
     this.API_KEY = geminiKey;
     localStorage.setItem("avalai_api_key", avalaiKey);
@@ -550,6 +785,12 @@ class AIChatApp {
     localStorage.setItem("theme", theme);
     this.theme = theme;
     this.applyTheme(theme);
+    localStorage.setItem("font_size", fontSize);
+    this.fontSize = fontSize;
+    this.applyFontSize(fontSize);
+    localStorage.setItem("bold_text", boldText);
+    this.boldText = boldText;
+    this.applyBoldText(boldText);
     this.hideSettingsModal();
     this.showToast("Settings saved successfully!", "success");
   }
@@ -560,6 +801,58 @@ class AIChatApp {
     
     // Add selected theme class
     document.body.classList.add(`theme-${theme}`);
+  }
+  
+  applyFontSize(size) {
+    // Remove all font size classes
+    document.body.classList.remove('font-small', 'font-medium', 'font-large', 'font-xlarge');
+    
+    // Add selected font size class
+    document.body.classList.add(`font-${size}`);
+  }
+  
+  applyBoldText(bold) {
+    if (bold) {
+      document.body.classList.add('text-bold');
+    } else {
+      document.body.classList.remove('text-bold');
+    }
+  }
+  
+  // Global Leitner Highlighting System
+  initGlobalHighlighting() {
+    // Create MutationObserver to watch for DOM changes
+    this.highlightObserver = new MutationObserver((mutations) => {
+      // Debounce to avoid too many updates
+      if (this.highlightDebounceTimer) {
+        clearTimeout(this.highlightDebounceTimer);
+      }
+      
+      this.highlightDebounceTimer = setTimeout(() => {
+        this.updateLeitnerHighlights();
+      }, 100);
+    });
+    
+    // Start observing the document with configured parameters
+    const config = {
+      childList: true,
+      subtree: true,
+      characterData: false,
+      attributes: false
+    };
+    
+    this.highlightObserver.observe(document.body, config);
+  }
+  
+  stopGlobalHighlighting() {
+    if (this.highlightObserver) {
+      this.highlightObserver.disconnect();
+      this.highlightObserver = null;
+    }
+    if (this.highlightDebounceTimer) {
+      clearTimeout(this.highlightDebounceTimer);
+      this.highlightDebounceTimer = null;
+    }
   }
 
   createChatWithName() {
@@ -594,6 +887,10 @@ class AIChatApp {
 
   renderChatList() {
     this.chatListItems.innerHTML = "";
+    
+    // Use DocumentFragment for better performance
+    const fragment = document.createDocumentFragment();
+    
     this.chats.forEach(chat => {
       const li = document.createElement("li");
       li.className = "chat-item";
@@ -612,9 +909,9 @@ class AIChatApp {
       deleteBtn.className = "btn-icon danger";
       deleteBtn.title = "Delete Chat";
       deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
-      deleteBtn.onclick = (e) => {
+      deleteBtn.onclick = async (e) => {
         e.stopPropagation();
-        if (confirm(`Are you sure you want to delete the chat "${chat.title}"?`)) {
+        if (await dialogManager.confirm(`Are you sure you want to delete the chat "${chat.title}"?`, 'Delete Chat')) {
           this.deleteChatById(chat.id);
         }
       };
@@ -622,8 +919,11 @@ class AIChatApp {
       li.appendChild(titleSpan); li.appendChild(actionsDiv);
       li.addEventListener("click", () => this.switchToChat(chat.id));
       if (chat.id === this.currentChatId) li.classList.add("active");
-      this.chatListItems.appendChild(li);
+      fragment.appendChild(li);
     });
+    
+    // Append all at once
+    this.chatListItems.appendChild(fragment);
   }
 
   switchSidebarSection(section) {
@@ -721,28 +1021,29 @@ class AIChatApp {
     const cards = await this.getLeitnerCardsByScope(scope, true);
     this.currentScopeCards = cards;
     this.leitnerDueCache.clear();
+    
+    // Store all cards in cache with their full key
     cards.forEach(card => {
       const wordKey = `${card.scopeKey}:${card.word}`;
       this.leitnerDueCache.set(wordKey, this.evaluateCardDueState(card));
     });
-    if (scope.type !== 'global') {
-      const globalCards = cards.filter(card => card.scopeKey === 'global:all');
-      globalCards.forEach(card => {
-        const wordKey = `global:all:${card.word}`;
-        if (!this.leitnerDueCache.has(wordKey)) {
-          this.leitnerDueCache.set(wordKey, this.evaluateCardDueState(card));
-        }
-      });
-    }
+    
     this.updateLeitnerHighlights();
   }
 
   evaluateCardDueState(card) {
     if (!card) return { state: 'none' };
+    
     const now = new Date();
-    const due = card.dueDate ? new Date(card.dueDate) : now;
+    now.setHours(0, 0, 0, 0);
+    
+    const due = card.dueDate ? new Date(card.dueDate) : new Date();
+    due.setHours(0, 0, 0, 0);
+    
     const isDue = due <= now;
-    const overdue = isDue && now - due > 24 * 60 * 60 * 1000;
+    const daysDiff = Math.floor((now - due) / (24 * 60 * 60 * 1000));
+    const overdue = isDue && daysDiff > 1;
+    
     return {
       state: isDue ? (overdue ? 'overdue' : 'due') : (card.repetitions === 0 ? 'new' : 'scheduled'),
       dueDate: card.dueDate,
@@ -750,12 +1051,36 @@ class AIChatApp {
     };
   }
 
-  refreshLeitnerDueCacheForWord(word, scope) {
+  async refreshLeitnerDueCacheForWord(word, scope) {
     const normalizedWord = this.normalizeWord(word);
     const scopeKey = this.getScopeKey(scope);
     const cardId = `${scopeKey}:${normalizedWord}`;
-    this.leitnerDueCache.delete(cardId);
-    this.preloadLeitnerForScope(scope);
+    
+    // Try to get updated card from database
+    try {
+      const card = await this.db.get(this.LEITNER_STORE, cardId);
+      if (card) {
+        const wordKey = `${card.scopeKey}:${card.word}`;
+        this.leitnerDueCache.set(wordKey, this.evaluateCardDueState(card));
+      } else {
+        // Card was deleted, remove from cache
+        this.leitnerDueCache.delete(cardId);
+      }
+      
+      // Also check for global card if not in global scope
+      if (scopeKey !== 'global:all') {
+        const globalCardId = `global:all:${normalizedWord}`;
+        const globalCard = await this.db.get(this.LEITNER_STORE, globalCardId);
+        if (globalCard) {
+          const wordKey = `${globalCard.scopeKey}:${globalCard.word}`;
+          this.leitnerDueCache.set(wordKey, this.evaluateCardDueState(globalCard));
+        }
+      }
+      
+      this.updateLeitnerHighlights();
+    } catch (error) {
+      console.error('Error refreshing Leitner cache for word:', error);
+    }
   }
 
   sanitizeDocuments(documents) {
@@ -872,11 +1197,11 @@ class AIChatApp {
     this.renderDocumentTree();
   }
 
-  selectDocument(documentId) {
+  async selectDocument(documentId) {
     if (this.documentEditorDirty && this.currentDocumentId && this.currentDocumentId !== documentId) {
       const currentDoc = this.getDocumentById(this.currentDocumentId);
       if (currentDoc && currentDoc.type === 'file') {
-        const discard = confirm('You have unsaved changes in the current document. Discard them?');
+        const discard = await dialogManager.confirm('You have unsaved changes in the current document. Discard them?', 'Unsaved Changes');
         if (!discard) {
           return;
         }
@@ -961,7 +1286,8 @@ class AIChatApp {
           if (messageWrapper) {
             const messageId = messageWrapper.id;
             const player = this.activeTTSPlayers.get(messageId);
-            if (player && (player.isPlaying || player.isPaused)) {
+            // If actively playing (not paused), jump to word
+            if (player && player.isPlaying && !player.isPaused) {
               e.preventDefault();
               e.stopPropagation();
               const wordText = wordTarget.textContent.toLowerCase();
@@ -973,6 +1299,7 @@ class AIChatApp {
             }
           }
 
+          // Normal word meaning lookup (when paused/stopped/no player)
           e.preventDefault();
           e.stopPropagation();
           this.showWordMeaning(word);
@@ -1034,9 +1361,9 @@ class AIChatApp {
     this.showDocumentEditMode(doc);
   }
 
-  cancelEditMode() {
+  async cancelEditMode() {
     if (this.documentEditorDirty) {
-      const discard = confirm('You have unsaved changes. Discard them?');
+      const discard = await dialogManager.confirm('You have unsaved changes. Discard them?', 'Unsaved Changes');
       if (!discard) return;
     }
     
@@ -1258,8 +1585,8 @@ class AIChatApp {
     this.showToast('Folder created.', 'success');
   }
 
-  createDocumentFile() {
-    const name = prompt('Document name', 'New Document');
+  async createDocumentFile() {
+    const name = await dialogManager.prompt('Document name', 'New Document', 'Create Document');
     if (name === null) return;
     const trimmed = name.trim();
     if (!trimmed) {
@@ -1283,8 +1610,8 @@ class AIChatApp {
     this.showToast('Document created.', 'success');
   }
 
-  createDocumentFolder() {
-    const name = prompt('Folder name', 'New Folder');
+  async createDocumentFolder() {
+    const name = await dialogManager.prompt('Folder name', 'New Folder', 'Create Folder');
     if (name === null) return;
     const trimmed = name.trim();
     if (!trimmed) {
@@ -1307,13 +1634,13 @@ class AIChatApp {
     this.showToast('Folder created.', 'success');
   }
 
-  renameDocument() {
+  async renameDocument() {
     const doc = this.getDocumentById(this.currentDocumentId);
     if (!doc) {
       this.showToast('Select a document or folder to rename.', 'info');
       return;
     }
-    const name = prompt('New name', doc.title || '');
+    const name = await dialogManager.prompt('New name', doc.title || '', 'Rename');
     if (name === null) return;
     const trimmed = name.trim();
     if (!trimmed) {
@@ -1328,15 +1655,16 @@ class AIChatApp {
     this.showToast('Name updated.', 'success');
   }
 
-  deleteDocument() {
+  async deleteDocument() {
     const doc = this.getDocumentById(this.currentDocumentId);
     if (!doc) {
       this.showToast('Select a document or folder to delete.', 'info');
       return;
     }
-    const confirmed = confirm(`Delete "${doc.title}"${doc.type === 'folder' ? ' and all of its contents' : ''}?`);
+    const confirmed = await dialogManager.confirm(`Delete "${doc.title}"${doc.type === 'folder' ? ' and all of its contents' : ''}?`, 'Delete Document');
     if (!confirmed) return;
-    this.removeDocumentAndChildren(doc.id);
+    
+    await this.removeDocumentAndChildren(doc.id);
     this.collapsedFolders.delete(doc.id);
     this.currentDocumentId = null;
     this.documentEditorDirty = false;
@@ -1346,12 +1674,35 @@ class AIChatApp {
     this.showToast('Deleted successfully.', 'success');
   }
 
-  removeDocumentAndChildren(id) {
+  async removeDocumentAndChildren(id) {
+    // Get all children first
     const children = this.documents.filter(doc => doc.parentId === id);
-    children.forEach(child => {
-      this.removeDocumentAndChildren(child.id);
+    
+    // Recursively delete children
+    for (const child of children) {
+      await this.removeDocumentAndChildren(child.id);
       this.collapsedFolders.delete(child.id);
-    });
+    }
+    
+    // Delete Leitner cards associated with this document
+    try {
+      const docScope = this.getDocumentScope(id);
+      const scopeKey = this.getScopeKey(docScope);
+      const allCards = await this.db.getAll(this.LEITNER_STORE);
+      const cardsToDelete = allCards.filter(card => card.scopeKey === scopeKey);
+      
+      for (const card of cardsToDelete) {
+        await this.db.delete(this.LEITNER_STORE, card.id);
+      }
+      
+      if (cardsToDelete.length > 0) {
+        console.log(`Deleted ${cardsToDelete.length} Leitner cards associated with document ${id}`);
+      }
+    } catch (error) {
+      console.error('Error deleting Leitner cards for document:', error);
+    }
+    
+    // Finally delete the document itself
     this.documents = this.documents.filter(doc => doc.id !== id);
   }
 
@@ -1480,6 +1831,20 @@ class AIChatApp {
         const player = this.activeTTSPlayers.get(messageId);
         player.togglePlayPause();
       } else {
+        // Stop all other active players before starting new one
+        const playersToStop = [];
+        this.activeTTSPlayers.forEach((player, id) => {
+          if (id !== messageId) {
+            playersToStop.push({ player, id });
+          }
+        });
+        
+        // Cleanup other players
+        playersToStop.forEach(({ player, id }) => {
+          player.cleanup();
+          this.activeTTSPlayers.delete(id);
+        });
+        
         // Create new advanced player
         const player = new AdvancedTTSPlayer(this);
         this.activeTTSPlayers.set(messageId, player);
@@ -1893,14 +2258,20 @@ class AIChatApp {
   }
 
   updateLeitnerHighlights() {
-    if (!this.messagesDiv) return;
     const scope = this.getActiveScope();
-    const allWords = this.messagesDiv.querySelectorAll('.ai-word');
+    
+    // Find ALL .ai-word elements in the entire document
+    const allWords = document.querySelectorAll('.ai-word');
+    
     allWords.forEach(wordEl => {
       const word = wordEl.dataset.word || wordEl.textContent;
       const stateInfo = this.getWordLeitnerState(word, scope);
       wordEl.dataset.leitnerState = stateInfo.state;
+      
+      // Remove all previous classes
       wordEl.classList.remove('leitner-due', 'leitner-overdue', 'leitner-new', 'leitner-scheduled');
+      
+      // Add appropriate class
       switch (stateInfo.state) {
         case 'overdue':
           wordEl.classList.add('leitner-overdue');
@@ -2150,22 +2521,31 @@ Be thorough and comprehensive.`;
     titleEl.textContent = word;
     meaningsListEl.innerHTML = '<div class="meaning-item">Loading...</div>';
     
-    // Check if word has a due/overdue card
+    // Check if word has a due/overdue card in current scope or global
     const normalizedWord = this.normalizeWord(word);
     const scope = this.getActiveScope();
     const scopeKey = this.getScopeKey(scope);
     const cardId = `${scopeKey}:${normalizedWord}`;
-    const card = await this.db.get(this.LEITNER_STORE, cardId);
+    const globalCardId = `global:all:${normalizedWord}`;
     
-    if (card) {
-      const dueState = this.evaluateCardDueState(card);
+    // Check both scope-specific and global cards
+    const [card, globalCard] = await Promise.all([
+      this.db.get(this.LEITNER_STORE, cardId),
+      scopeKey !== 'global:all' ? this.db.get(this.LEITNER_STORE, globalCardId) : Promise.resolve(null)
+    ]);
+    
+    // Use scope-specific card if exists, otherwise use global
+    const cardToReview = card || globalCard;
+    
+    if (cardToReview) {
+      const dueState = this.evaluateCardDueState(cardToReview);
       if (dueState.state === 'due' || dueState.state === 'overdue') {
         reviewWordBtn.classList.remove('hidden');
         reviewWordBtn.addEventListener('click', () => {
           this.hidePopup(newPopup);
           newPopup.remove();
           // Start a quick review session for this specific card
-          this.startQuickReview(card);
+          this.startQuickReview(cardToReview);
         });
       }
     }
@@ -2352,10 +2732,10 @@ Be thorough and comprehensive.`;
     catch { this.translatedTextEl.textContent = "Translation failed"; }
   }
   
-  renameChat() {
+  async renameChat() {
     const chat = this.chats.find(c => c.id === this.currentChatId);
     if (!chat) return;
-    const newTitle = prompt("Enter new chat name:", chat.title);
+    const newTitle = await dialogManager.prompt("Enter new chat name:", chat.title, "Rename Chat");
     if (newTitle && newTitle.trim() !== "") {
         chat.title = newTitle.trim();
         this.saveChats();
@@ -2364,15 +2744,37 @@ Be thorough and comprehensive.`;
     }
   }
 
-  deleteChat() {
-    if (confirm("Are you sure you want to delete this chat?")) {
+  async deleteChat() {
+    if (await dialogManager.confirm("Are you sure you want to delete this chat?", "Delete Chat")) {
         this.deleteChatById(this.currentChatId);
     }
   }
 
-  deleteChatById(chatId) {
+  async deleteChatById(chatId) {
+    if (!chatId) return;
+    
+    // Delete associated Leitner cards first
+    try {
+      const chatScope = this.getChatScope(chatId);
+      const scopeKey = this.getScopeKey(chatScope);
+      const allCards = await this.db.getAll(this.LEITNER_STORE);
+      const cardsToDelete = allCards.filter(card => card.scopeKey === scopeKey);
+      
+      for (const card of cardsToDelete) {
+        await this.db.delete(this.LEITNER_STORE, card.id);
+      }
+      
+      if (cardsToDelete.length > 0) {
+        console.log(`Deleted ${cardsToDelete.length} Leitner cards associated with chat ${chatId}`);
+      }
+    } catch (error) {
+      console.error('Error deleting Leitner cards for chat:', error);
+    }
+    
+    // Delete the chat
     this.chats = this.chats.filter(c => c.id !== chatId);
     this.saveChats();
+    
     if (this.currentChatId === chatId) {
         this.currentChatId = null;
         this.messagesDiv.innerHTML = "";
@@ -2381,11 +2783,12 @@ Be thorough and comprehensive.`;
             this.switchToChat(this.chats[0].id);
         }
     }
+    
     this.renderChatList();
   }
   
-  deleteMessageById(messageId) {
-      if (!confirm("Are you sure you want to delete this message?")) {
+  async deleteMessageById(messageId) {
+      if (!await dialogManager.confirm("Are you sure you want to delete this message?", "Delete Message")) {
           return;
       }
       const chat = this.chats.find(c => c.id === this.currentChatId);
@@ -2433,11 +2836,29 @@ Be thorough and comprehensive.`;
     const cardId = this.getLeitnerCardId(normalizedWord, targetScope);
 
     try {
+      // Check if card exists in target scope
       const existingCard = await this.db.get(this.LEITNER_STORE, cardId);
       if (existingCard) {
         this.showToast(`"${normalizedWord}" is already in this deck.`, 'info');
         await this.playTextToSpeech(normalizedWord, null, null, null);
         return;
+      }
+
+      // Also check global scope to inform user
+      if (scopeKey !== 'global:all') {
+        const globalCardId = `global:all:${normalizedWord}`;
+        const globalCard = await this.db.get(this.LEITNER_STORE, globalCardId);
+        if (globalCard) {
+          const addAnyway = await dialogManager.confirm(
+            `"${normalizedWord}" already exists in Global flashcards.\n\n` +
+            `Do you want to add it to this ${targetScope.type === 'chat' ? 'chat' : 'document'} as well?`,
+            'Word Already Exists'
+          );
+          if (!addAnyway) {
+            await this.playTextToSpeech(normalizedWord, null, null, null);
+            return;
+          }
+        }
       }
 
       const createdAt = new Date().toISOString();
@@ -2459,7 +2880,7 @@ Be thorough and comprehensive.`;
       await this.db.set(this.LEITNER_STORE, newCard);
       await this.playTextToSpeech(normalizedWord, null, null, null);
       this.showToast(`"${normalizedWord}" added to flashcards!`, 'success');
-      this.refreshLeitnerDueCacheForWord(normalizedWord, targetScope);
+      await this.refreshLeitnerDueCacheForWord(normalizedWord, targetScope);
     } catch (error) {
       console.error('Error adding card to Leitner:', error);
       this.showToast('Failed to add word to flashcards.', 'error');
@@ -2481,27 +2902,64 @@ Be thorough and comprehensive.`;
       today.setHours(0, 0, 0, 0);
       
       let cardsToReview = allCards.filter(card => {
-        if (!card || !card.scopeKey) return false;
+        // Validate card structure
+        if (!card || !card.scopeKey || !card.word || !card.id) {
+          console.warn('Invalid card found:', card);
+          return false;
+        }
+        
+        // Filter by scope
         if (card.scopeKey !== scopeKey) {
           if (!includeGlobal) return false;
           if (card.scopeKey !== 'global:all') return false;
         }
         
-        // Check if card is due
+        // Validate and parse due date
+        if (!card.dueDate) {
+          console.warn('Card missing dueDate:', card.word);
+          return false;
+        }
+        
         const dueDate = new Date(card.dueDate);
+        if (isNaN(dueDate.getTime())) {
+          console.warn('Card has invalid dueDate:', card.word, card.dueDate);
+          return false;
+        }
+        
         dueDate.setHours(0, 0, 0, 0);
         return dueDate <= today;
       });
       
-      // Shuffle cards
-      this.leitnerQueue = cardsToReview.sort(() => Math.random() - 0.5);
+      // Sort cards by priority: overdue (oldest first) -> new -> regular due
+      cardsToReview.sort((a, b) => {
+        const aDue = new Date(a.dueDate);
+        const bDue = new Date(b.dueDate);
+        aDue.setHours(0, 0, 0, 0);
+        bDue.setHours(0, 0, 0, 0);
+        
+        const aIsNew = (a.repetitions || 0) === 0;
+        const bIsNew = (b.repetitions || 0) === 0;
+        
+        // Both new - random order
+        if (aIsNew && bIsNew) return Math.random() - 0.5;
+        
+        // One is new, one is review - new cards first
+        if (aIsNew) return -1;
+        if (bIsNew) return 1;
+        
+        // Both are review cards - sort by due date (oldest first)
+        return aDue - bDue;
+      });
+      
+      this.leitnerQueue = cardsToReview;
       
       // Calculate stats
-  const newCount = this.leitnerQueue.filter(c => c.repetitions === 0).length;
-  const reviewCount = this.leitnerQueue.filter(c => c.repetitions > 0).length;
+      const newCount = this.leitnerQueue.filter(c => (c.repetitions || 0) === 0).length;
+      const reviewCount = this.leitnerQueue.filter(c => (c.repetitions || 0) > 0).length;
+      const totalCount = this.leitnerQueue.length;
       
       this.leitnerStatsNew.textContent = `New: ${newCount}`;
-      this.leitnerStatsDue.textContent = `Review: ${reviewCount}`;
+      this.leitnerStatsDue.textContent = `Review: ${reviewCount} | Total: ${totalCount}`;
       
       if (this.leitnerQueue.length > 0) {
         this.showNextCard();
@@ -2538,6 +2996,15 @@ Be thorough and comprehensive.`;
       return;
     }
     this.currentCard = this.leitnerQueue.shift();
+    
+    // Update remaining count in stats
+    const remaining = this.leitnerQueue.length;
+    const newCount = this.leitnerQueue.filter(c => (c.repetitions || 0) === 0).length;
+    const reviewCount = this.leitnerQueue.filter(c => (c.repetitions || 0) > 0).length;
+    
+    this.leitnerStatsNew.textContent = `New: ${newCount}`;
+    this.leitnerStatsDue.textContent = `Review: ${reviewCount} | Remaining: ${remaining}`;
+    
     this.leitnerCard.classList.remove('is-flipped');
     this.leitnerRatingControls.classList.add('hidden');
     this.leitnerInitialControls.classList.remove('hidden');
@@ -2591,8 +3058,8 @@ Be thorough and comprehensive.`;
      * Anki SM-2 Algorithm with Learning Steps
      * quality: 0-5 where:
      *   0: Again (Complete blackout)
-     *   2: Hard (Incorrect but remembered)  
-     *   3: Good (Correct but difficult)
+     *   2: Hard (Correct with hesitation)  
+     *   3: Good (Correct response)
      *   5: Easy (Perfect recall)
      */
     
@@ -2607,18 +3074,19 @@ Be thorough and comprehensive.`;
     let newInterval;
     let newEaseFactor;
     
-    if (quality < 3) {
+    // Again button (quality=0) - Failed card
+    if (quality === 0) {
       // Failed card - reset to learning
       newRepetitions = 0;
       // Again button shows card in same session for new cards, tomorrow for review cards
       if (repetitions === 0) {
-        newInterval = 0; // Show again soon (display as <1d)
+        newInterval = 0; // Show again soon in same session
       } else {
         newInterval = 1; // Review tomorrow for lapsed cards
       }
       newEaseFactor = Math.max(1.3, easeFactor - 0.2); // Decrease ease factor
     } else {
-      // Passed card
+      // Passed card (Hard, Good, or Easy)
       // Calculate new ease factor: EF' = EF + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
       newEaseFactor = Math.max(1.3, easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)));
       
@@ -2627,11 +3095,11 @@ Be thorough and comprehensive.`;
         if (quality === 5) {
           // Easy button on new card - graduate immediately with longer interval
           newInterval = 4; // Anki default: 4 days for easy on new cards
-          newRepetitions = 2; // Skip learning phase
+          newRepetitions = 2; // Skip learning phase entirely
         } else if (quality === 2) {
-          // Hard button on new card - stay in learning longer
-          newInterval = 0; // Show again in same session
-          newRepetitions = 0; // Stay in learning
+          // Hard button on new card - graduate but with shorter interval
+          newInterval = 1;
+          newRepetitions = 1; // Graduate to review stage
         } else {
           // Good button on new card - graduate to review
           newInterval = 1; // Graduate with 1 day interval
@@ -2640,8 +3108,8 @@ Be thorough and comprehensive.`;
       } else if (repetitions === 1) {
         // Second successful review (first review after graduating)
         if (quality === 5) {
-          // Easy button
-          newInterval = Math.round(interval * newEaseFactor * 1.3); // Bonus for easy
+          // Easy button - bonus multiplier
+          newInterval = Math.round(interval * newEaseFactor * 1.3);
         } else if (quality === 2) {
           // Hard button - slightly longer than current
           newInterval = Math.max(2, Math.round(interval * 1.2)); // At least 2 days
@@ -2664,6 +3132,11 @@ Be thorough and comprehensive.`;
         }
         newRepetitions = repetitions + 1;
       }
+    }
+    
+    // Ensure interval is never 0 except for same-session reviews (Again button)
+    if (newInterval === 0 && quality > 0) {
+      newInterval = 1;
     }
     
     return {
@@ -2695,11 +3168,11 @@ Be thorough and comprehensive.`;
     const goodResult = this.calculateSM2(card, 3);
     const easyResult = this.calculateSM2(card, 5);
     
-    // Update button labels with intervals
-    this.ratingAgainBtn.querySelector('small').textContent = this.formatInterval(againResult.interval);
-    this.ratingHardBtn.querySelector('small').textContent = this.formatInterval(hardResult.interval);
-    this.ratingGoodBtn.querySelector('small').textContent = this.formatInterval(goodResult.interval);
-    this.ratingEasyBtn.querySelector('small').textContent = this.formatInterval(easyResult.interval);
+    // Update button labels with intervals and keyboard shortcuts
+    this.ratingAgainBtn.innerHTML = `Again<br><small>${this.formatInterval(againResult.interval)} (1)</small>`;
+    this.ratingHardBtn.innerHTML = `Hard<br><small>${this.formatInterval(hardResult.interval)} (2)</small>`;
+    this.ratingGoodBtn.innerHTML = `Good<br><small>${this.formatInterval(goodResult.interval)} (3)</small>`;
+    this.ratingEasyBtn.innerHTML = `Easy<br><small>${this.formatInterval(easyResult.interval)} (4)</small>`;
   }
 
   async rateCard(rating) {
@@ -2718,17 +3191,19 @@ Be thorough and comprehensive.`;
     
     // Calculate next due date
     const nextDueDate = new Date();
-    nextDueDate.setHours(0, 0, 0, 0); // Set to midnight
-    nextDueDate.setDate(nextDueDate.getDate() + sm2Result.interval);
+    nextDueDate.setHours(0, 0, 0, 0); // Set to midnight today
+    
+    // Add interval days - if interval is 0, keep it today for same-session review
+    if (sm2Result.interval > 0) {
+      nextDueDate.setDate(nextDueDate.getDate() + sm2Result.interval);
+    }
     
     // Determine status
     let status;
     if (sm2Result.repetitions === 0) {
-      status = 'learning';
-    } else if (sm2Result.repetitions < 2) {
-      status = 'learning';
+      status = 'learning'; // New cards or lapsed cards
     } else {
-      status = 'review';
+      status = 'review'; // Graduated cards (rep >= 1)
     }
     
     // Update card in database
@@ -2742,7 +3217,21 @@ Be thorough and comprehensive.`;
       status: status
     };
     
-  await this.db.set(this.LEITNER_STORE, updatedCard);
+    await this.db.set(this.LEITNER_STORE, updatedCard);
+    
+    // Update cache for this word
+    await this.refreshLeitnerDueCacheForWord(this.currentCard.word, this.currentLeitnerScope);
+    
+    // If interval is 0 (Again button), re-add card to queue for same-session review
+    if (sm2Result.interval === 0) {
+      // Add to end of queue after 3-5 random cards (if available)
+      const insertPosition = Math.min(
+        this.leitnerQueue.length,
+        Math.floor(Math.random() * 3) + 3
+      );
+      this.leitnerQueue.splice(insertPosition, 0, updatedCard);
+    }
+    
     this.showNextCard();
   }
   
@@ -2929,18 +3418,35 @@ Be thorough and comprehensive.`;
 
   async exportAppData() {
     try {
+      // Get all data from IndexedDB first to check if there are Leitner cards
+      const leitnerCardsCheck = await this.db.getAll(this.LEITNER_STORE);
+      let includeLeitnerCards = true;
+      
+      // If there are Leitner cards, ask user if they want to include them
+      if (leitnerCardsCheck && leitnerCardsCheck.length > 0) {
+        const userChoice = await dialogManager.confirm(
+          `You have ${leitnerCardsCheck.length} flashcard(s) with review schedules.\n\n` +
+          `Do you want to INCLUDE flashcards with their scheduling in the export?\n\n` +
+          `• Click "Confirm" to include flashcards (recommended for full backup)\n` +
+          `• Click "Cancel" to exclude flashcards (only export chats, documents, and settings)`,
+          'Export Options'
+        );
+        includeLeitnerCards = userChoice;
+        console.log('Export - User chose to include Leitner cards:', includeLeitnerCards);
+      }
+      
       this.showToast('Exporting data... Please wait.', 'info');
       
       // Get all data from IndexedDB
       const [wordMeanings, audioCache, leitnerCards] = await Promise.all([
         this.db.getAll('word_meanings'),
         this.db.getAll('audio_cache'),
-        this.db.getAll(this.LEITNER_STORE)
+        includeLeitnerCards ? this.db.getAll(this.LEITNER_STORE) : Promise.resolve([])
       ]);
 
       console.log('Export - Word Meanings:', wordMeanings.length);
       console.log('Export - Audio Cache:', audioCache.length);
-      console.log('Export - Leitner Cards:', leitnerCards.length);
+      console.log('Export - Leitner Cards:', includeLeitnerCards ? leitnerCards.length : 0);
 
       // Serialize audio cache (convert Blob to base64)
       const serializedAudio = [];
@@ -2975,7 +3481,7 @@ Be thorough and comprehensive.`;
         indexedDB: {
           word_meanings: wordMeanings || [],
           audio_cache: serializedAudio || [],
-          leitner_cards_v2: leitnerCards || []
+          leitner_cards_v2: includeLeitnerCards ? (leitnerCards || []) : []
         }
       };
 
@@ -2998,7 +3504,10 @@ Be thorough and comprehensive.`;
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      this.showToast('Application data exported successfully!', 'success');
+      const exportMessage = includeLeitnerCards 
+        ? 'Application data exported successfully (including flashcards)!' 
+        : 'Application data exported successfully (excluding flashcards)!';
+      this.showToast(exportMessage, 'success');
     } catch (error) {
       console.error('Error exporting application data:', error);
       this.showToast(`Failed to export application data: ${error.message}`, 'error');
@@ -3043,6 +3552,23 @@ Be thorough and comprehensive.`;
         // Support both version 1 and version 2 formats
         const localData = data.localStorage || data || {};
         const indexedData = data.indexedDB || {};
+
+        // Check if there are Leitner cards in the backup
+        const leitnerData = indexedData.leitner_cards_v2 || indexedData.leitner_cards || [];
+        let importLeitnerCards = true;
+        
+        if (Array.isArray(leitnerData) && leitnerData.length > 0) {
+          // Ask user if they want to import Leitner cards with their scheduling
+          const userChoice = await dialogManager.confirm(
+            `This backup contains ${leitnerData.length} flashcard(s) with their review schedules.\n\n` +
+            `Do you want to import the flashcards WITH their scheduling information?\n\n` +
+            `• Click "Confirm" to import flashcards with their schedules (recommended)\n` +
+            `• Click "Cancel" to skip importing flashcards (only import chats, documents, and settings)`,
+            'Import Options'
+          );
+          importLeitnerCards = userChoice;
+          console.log('Import - User chose to import Leitner cards:', importLeitnerCards);
+        }
 
         // Import chats
         if (Array.isArray(localData.chats)) {
@@ -3133,41 +3659,44 @@ Be thorough and comprehensive.`;
         }
 
         // Import leitner cards - support both old and new format
-        await this.db.clearStore(this.LEITNER_STORE);
-        const leitnerData = indexedData.leitner_cards_v2 || indexedData.leitner_cards || [];
-        if (Array.isArray(leitnerData) && leitnerData.length > 0) {
-          console.log('Import - Leitner Cards:', leitnerData.length);
-          let importedCards = 0;
-          for (const card of leitnerData) {
-            if (!card || !card.word) continue;
-            
-            try {
-              // If it's old format, migrate it
-              if (!card.scopeKey) {
-                const scopeType = card.chatId ? 'chat' : 'global';
-                const scopeId = card.chatId || 'all';
-                const scopeKey = `${scopeType}:${scopeId}`;
-                const id = `${scopeKey}:${card.word}`;
-                const migratedCard = {
-                  ...card,
-                  id,
-                  scopeType,
-                  scopeId,
-                  scopeKey,
-                  createdAt: card.createdAt || new Date().toISOString()
-                };
-                await this.db.set(this.LEITNER_STORE, migratedCard);
-              } else {
-                await this.db.set(this.LEITNER_STORE, card);
+        if (importLeitnerCards) {
+          await this.db.clearStore(this.LEITNER_STORE);
+          if (Array.isArray(leitnerData) && leitnerData.length > 0) {
+            console.log('Import - Leitner Cards:', leitnerData.length);
+            let importedCards = 0;
+            for (const card of leitnerData) {
+              if (!card || !card.word) continue;
+              
+              try {
+                // If it's old format, migrate it
+                if (!card.scopeKey) {
+                  const scopeType = card.chatId ? 'chat' : 'global';
+                  const scopeId = card.chatId || 'all';
+                  const scopeKey = `${scopeType}:${scopeId}`;
+                  const id = `${scopeKey}:${card.word}`;
+                  const migratedCard = {
+                    ...card,
+                    id,
+                    scopeType,
+                    scopeId,
+                    scopeKey,
+                    createdAt: card.createdAt || new Date().toISOString()
+                  };
+                  await this.db.set(this.LEITNER_STORE, migratedCard);
+                } else {
+                  await this.db.set(this.LEITNER_STORE, card);
+                }
+                importedCards++;
+              } catch (error) {
+                console.error('Failed to import leitner card:', card.word, error);
               }
-              importedCards++;
-            } catch (error) {
-              console.error('Failed to import leitner card:', card.word, error);
             }
+            console.log('Import - Leitner cards imported:', importedCards);
+          } else {
+            console.log('Import - No leitner cards found in backup');
           }
-          console.log('Import - Leitner cards imported:', importedCards);
         } else {
-          console.log('Import - No leitner cards found in backup');
+          console.log('Import - User chose to skip Leitner cards import');
         }
 
         // Import audio cache
@@ -3257,7 +3786,7 @@ Be thorough and comprehensive.`;
       
     } catch (error) {
       console.error('Error accessing microphone:', error);
-      alert('Cannot access microphone. Please check permissions.');
+      notificationManager.error('Cannot access microphone. Please check permissions.');
     }
   }
 
@@ -3275,7 +3804,7 @@ Be thorough and comprehensive.`;
 
   async transcribeAudio(audioBlob) {
     if (!this.AVALAI_API_KEY) {
-      alert('Please set your API key in settings to use voice input.');
+      notificationManager.warning('Please set your API key in settings to use voice input.');
       return;
     }
 
@@ -3313,7 +3842,7 @@ Be thorough and comprehensive.`;
 
     } catch (error) {
       console.error('Transcription error:', error);
-      alert(`Failed to transcribe audio: ${error.message}`);
+      notificationManager.error(`Failed to transcribe audio: ${error.message}`);
     } finally {
       this.messageInput.placeholder = 'Type a message...';
       this.messageInput.disabled = false;
@@ -3341,6 +3870,21 @@ class AdvancedTTSPlayer {
     this.startTime = 0;
     this.pausedTime = 0;
     this.lastHighlightedSentence = -1;
+    
+    // Multi-tap detection
+    this.tapCount = 0;
+    this.tapTimer = null;
+    this.tapDelay = 300; // milliseconds between taps
+    
+    // Message element reference
+    this.messageElement = null;
+    
+    // Store original HTML for restoration
+    this.originalHTML = null;
+    
+    // Store references to UI elements for cleanup
+    this.simpleAudioBtn = null;
+    this.advancedControlsElement = null;
   }
 
   // Split text into sentences
@@ -3430,6 +3974,9 @@ class AdvancedTTSPlayer {
           // Pre-wrap all sentences in the DOM for easy highlighting
           this.wrapSentencesInDOM(messageDiv);
         }
+        
+        // Add tap-to-pause/play functionality
+        this.setupTapToPause(messageEl);
       }
     }
     
@@ -3438,6 +3985,98 @@ class AdvancedTTSPlayer {
     
     // Start playback
     await this.startPlayback();
+  }
+  
+  setupTapToPause(messageEl) {
+    // Add visual indicator class and tooltip to message
+    messageEl.classList.add('tts-active');
+    messageEl.title = '1× Tap: Pause/Play | 2× Tap: Previous | 3× Tap: Next';
+    
+    // Store message reference for this player
+    this.messageElement = messageEl;
+    
+    // Use a global tap handler on the app level instead of per-player
+    // This prevents multiple listeners from conflicting
+    if (!this.app.globalTapHandler) {
+      this.setupGlobalTapHandler();
+    }
+  }
+  
+  setupGlobalTapHandler() {
+    // Setup once at app level
+    const messagesContainer = document.getElementById('messages');
+    const documentContainer = document.querySelector('.document-content-view');
+    
+    const tapHandler = (e) => {
+      // Find which player should handle this click
+      let targetPlayer = null;
+      
+      // Check if click is inside a message with active TTS
+      const clickedMessage = e.target.closest('.message-wrapper.tts-active');
+      if (clickedMessage) {
+        const messageId = clickedMessage.id;
+        targetPlayer = this.app.activeTTSPlayers.get(messageId);
+      } else {
+        // Click in empty space - use the only active player (if any)
+        if (this.app.activeTTSPlayers.size === 1) {
+          targetPlayer = Array.from(this.app.activeTTSPlayers.values())[0];
+        }
+      }
+      
+      if (!targetPlayer) return;
+      
+      // Don't toggle if clicked on TTS controls
+      const clickedControl = e.target.closest('.advanced-tts-controls, .btn-tts-control');
+      if (clickedControl) return;
+      
+      // Don't toggle if clicked on other buttons
+      const clickedButton = e.target.closest('button:not(.tts-active), .btn-message-action, .message-controls');
+      if (clickedButton) return;
+      
+      // If clicked on a word, don't toggle (let word handlers work)
+      const clickedWord = e.target.closest('.ai-word, .tts-word');
+      if (clickedWord) return;
+      
+      // Multi-tap detection on the target player
+      targetPlayer.handleTap();
+    };
+    
+    if (messagesContainer) {
+      messagesContainer.addEventListener('click', tapHandler);
+    }
+    if (documentContainer) {
+      documentContainer.addEventListener('click', tapHandler);
+    }
+    
+    // Store globally so we only set it up once
+    this.app.globalTapHandler = tapHandler;
+  }
+  
+  handleTap() {
+    // Multi-tap detection
+    this.tapCount++;
+    
+    // Clear existing timer
+    if (this.tapTimer) {
+      clearTimeout(this.tapTimer);
+    }
+    
+    // Set timer to execute action after delay
+    this.tapTimer = setTimeout(() => {
+      if (this.tapCount === 1) {
+        // Single tap: toggle play/pause
+        this.togglePlayPause();
+      } else if (this.tapCount === 2) {
+        // Double tap: previous sentence
+        this.previousSentence();
+      } else if (this.tapCount >= 3) {
+        // Triple tap: next sentence
+        this.nextSentence();
+      }
+      
+      // Reset tap count
+      this.tapCount = 0;
+    }, this.tapDelay);
   }
   
   wrapSentencesInDOM(messageDiv) {
@@ -3740,15 +4379,6 @@ class AdvancedTTSPlayer {
     progressContainer.appendChild(progressBar);
     progressContainer.appendChild(progressText);
     
-    // Add a helper text
-    const helperText = document.createElement('span');
-    helperText.className = 'tts-helper-text';
-    helperText.textContent = '💡 Click words to jump';
-    helperText.style.fontSize = '10px';
-    helperText.style.color = 'var(--primary-color)';
-    helperText.style.marginLeft = '8px';
-    helperText.style.opacity = '0.7';
-    
     // Assemble controls
     advancedControls.appendChild(prevBtn);
     advancedControls.appendChild(playPauseBtn);
@@ -3756,11 +4386,16 @@ class AdvancedTTSPlayer {
     advancedControls.appendChild(stopBtn);
     advancedControls.appendChild(speedControl);
     advancedControls.appendChild(progressContainer);
-    advancedControls.appendChild(helperText);
     
-    // Replace simple audio button with advanced controls
-    this.controlsElement.innerHTML = '';
+    // Hide simple audio button and show advanced controls
+    const simpleBtn = this.controlsElement.querySelector('.btn-audio');
+    if (simpleBtn) {
+      simpleBtn.style.display = 'none';
+      this.simpleAudioBtn = simpleBtn; // Store reference for cleanup
+    }
+    
     this.controlsElement.appendChild(advancedControls);
+    this.advancedControlsElement = advancedControls;
     
     // Store references
     this.playPauseBtn = playPauseBtn;
@@ -4192,12 +4827,57 @@ class AdvancedTTSPlayer {
   cleanup() {
     this.stop();
     
+    // Clear multi-tap timer
+    if (this.tapTimer) {
+      clearTimeout(this.tapTimer);
+      this.tapTimer = null;
+    }
+    
+    // Restore original HTML if it was modified
+    if (this.originalHTML && this.messageId) {
+      const messageEl = document.getElementById(this.messageId);
+      if (messageEl) {
+        const messageDiv = messageEl.querySelector('.message');
+        if (messageDiv) {
+          messageDiv.innerHTML = this.originalHTML;
+        }
+      }
+      this.originalHTML = null;
+    }
+    
+    // Remove visual indicator from message
+    if (this.messageElement) {
+      this.messageElement.classList.remove('tts-active');
+      this.messageElement.removeAttribute('title');
+      this.messageElement = null;
+    }
+    
+    // Reset UI - remove advanced controls and restore simple button
+    if (this.controlsElement && this.messageId) {
+      // Remove advanced controls
+      if (this.advancedControlsElement) {
+        this.advancedControlsElement.remove();
+        this.advancedControlsElement = null;
+      }
+      
+      // Show simple audio button again
+      if (this.simpleAudioBtn) {
+        this.simpleAudioBtn.style.display = '';
+        this.simpleAudioBtn = null;
+      }
+      
+      this.controlsElement = null;
+    }
+    
     if (this.audio) {
       this.audio.src = '';
       this.audio = null;
     }
     
     this.clearAllHighlights();
+    
+    // DON'T remove from activeTTSPlayers here - let the caller handle it
+    // This prevents issues when switching between players
   }
 }
 
