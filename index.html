@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>AI Chat</title>
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.json">
@@ -104,17 +104,17 @@
               <option value="light">Light</option>
               <option value="dark">Dark</option>
               <option value="beige">Beige</option>
+              <option value="rgb-glass">RGB Glass ✨</option>
             </select>
         </div>
         
         <div class="setting-section">
-            <p>Font Size:</p>
-            <select id="font-size-select" class="settings-select">
-              <option value="small">Small</option>
-              <option value="medium">Medium (Default)</option>
-              <option value="large">Large</option>
-              <option value="xlarge">Extra Large</option>
-            </select>
+            <p>Font Size: <span id="font-size-value">14</span>px</p>
+            <input type="range" id="font-size-select" class="font-size-slider" min="10" max="24" value="14" step="1">
+            <div style="display: flex; justify-content: space-between; color: #999; font-size: 11px; margin-top: 4px;">
+              <span>Small (10px)</span>
+              <span>Large (24px)</span>
+            </div>
             <small style="color: #666; display: block; margin-top: 5px;">Affects chat messages, documents, and popups</small>
         </div>
         
@@ -378,6 +378,13 @@
       <div id="documents-main" class="main-panel hidden">
         <div class="document-header">
           <div class="header-left">
+            <button id="document-menu-toggle" class="btn-icon mobile-only">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+            </button>
             <h2 id="document-title">Documents</h2>
           </div>
           <div class="document-actions">
