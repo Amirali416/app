@@ -179,15 +179,12 @@ class CacheDB {
         reject("IndexedDB error"); 
       };
       request.onsuccess = (event) => { 
-        this.db = event.target.result; 
-        console.log("Database opened successfully."); 
+        this.db = event.target.result;
         resolve(); 
       };
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         const oldVersion = event.oldVersion;
-        
-        console.log(`Upgrading database from version ${oldVersion} to ${this.version}`);
         
         // Create word_meanings store if not exists
         if (!db.objectStoreNames.contains("word_meanings")) {
@@ -309,7 +306,7 @@ class AIChatApp {
     this.chatProvider = localStorage.getItem("chat_provider") || "gemini";
     this.ttsProvider = localStorage.getItem("tts_provider") || "gemini";
     this.theme = localStorage.getItem("theme") || "light";
-    this.fontSize = localStorage.getItem("font_size") || "medium";
+    this.fontSize = parseInt(localStorage.getItem("font_size")) || 14;
     this.boldText = localStorage.getItem("bold_text") === "true";
     this.chats = JSON.parse(localStorage.getItem("chats")) || [];
     try {
@@ -445,6 +442,7 @@ class AIChatApp {
     this.renameChatBtn = document.getElementById("rename-chat");
     this.deleteChatBtn = document.getElementById("delete-chat");
     this.menuToggle = document.getElementById("menu-toggle");
+    this.documentMenuToggle = document.getElementById("document-menu-toggle");
     this.settingsBtn = document.getElementById("settings-btn");
     this.wordMeaningPopup = document.getElementById("word-meaning-popup");
     this.translationPopup = document.getElementById("translation-popup");
@@ -536,8 +534,16 @@ class AIChatApp {
     this.renameChatBtn.addEventListener("click", () => this.renameChat());
     this.deleteChatBtn.addEventListener("click", () => this.deleteChat());
     this.menuToggle?.addEventListener("click", () => this.toggleSidebar());
+    this.documentMenuToggle?.addEventListener("click", () => this.toggleSidebar());
     this.sendBtn.addEventListener("click", () => this.sendMessage());
     this.voiceBtn?.addEventListener("click", () => this.toggleVoiceRecording());
+    
+    // Font size slider real-time update
+    this.fontSizeSelect.addEventListener("input", (e) => {
+      const sizeValue = e.target.value;
+      document.getElementById("font-size-value").textContent = sizeValue;
+    });
+    
     this.messageInput.addEventListener("input", () => this.adjustTextareaHeight());
     this.messageInput.addEventListener("keypress", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this.sendMessage(); } });
     
@@ -589,7 +595,7 @@ class AIChatApp {
     this.translateSelectionBtn.addEventListener('click', () => this.handleTranslateButtonClick());
     document.addEventListener('click', (e) => {
       if (!this.translateSelectionBtn.contains(e.target)) this.hideTranslateButton();
-      if (this.sidebar.classList.contains("active") && !this.sidebar.contains(e.target) && e.target !== this.menuToggle && !this.menuToggle.contains(e.target)) this.hideSidebar();
+      if (this.sidebar.classList.contains("active") && !this.sidebar.contains(e.target) && e.target !== this.menuToggle && !this.menuToggle.contains(e.target) && e.target !== this.documentMenuToggle && !this.documentMenuToggle?.contains(e.target)) this.hideSidebar();
     });
     this.currentChatLeitnerBtn?.addEventListener("click", () => this.openLeitnerModal(this.currentChatId));
     this.closeLeitnerBtn.addEventListener("click", () => this.closeLeitnerModal());
@@ -758,6 +764,7 @@ class AIChatApp {
     this.ttsProviderSelect.value = this.ttsProvider;
     this.themeSelect.value = this.theme;
     this.fontSizeSelect.value = this.fontSize;
+    document.getElementById("font-size-value").textContent = this.fontSize;
     this.boldTextCheckbox.checked = this.boldText;
     this.settingsModal.classList.remove("hidden");
   }
@@ -797,7 +804,7 @@ class AIChatApp {
 
   applyTheme(theme) {
     // Remove all theme classes
-    document.body.classList.remove('theme-light', 'theme-dark', 'theme-blue', 'theme-purple', 'theme-beige');
+    document.body.classList.remove('theme-light', 'theme-dark', 'theme-blue', 'theme-purple', 'theme-beige', 'theme-rgb-glass');
     
     // Add selected theme class
     document.body.classList.add(`theme-${theme}`);
@@ -807,8 +814,11 @@ class AIChatApp {
     // Remove all font size classes
     document.body.classList.remove('font-small', 'font-medium', 'font-large', 'font-xlarge');
     
-    // Add selected font size class
-    document.body.classList.add(`font-${size}`);
+    // Convert to number if it's a string
+    const fontSize = parseInt(size) || 14;
+    
+    // Apply font size using CSS custom property
+    document.documentElement.style.setProperty('--dynamic-font-size', `${fontSize}px`);
   }
   
   applyBoldText(bold) {
@@ -1699,7 +1709,7 @@ class AIChatApp {
         console.log(`Deleted ${cardsToDelete.length} Leitner cards associated with document ${id}`);
       }
     } catch (error) {
-      console.error('Error deleting Leitner cards for document:', error);
+      // Silent error - cards already deleted or don't exist
     }
     
     // Finally delete the document itself
@@ -4003,9 +4013,8 @@ class AdvancedTTSPlayer {
   }
   
   setupGlobalTapHandler() {
-    // Setup once at app level
-    const messagesContainer = document.getElementById('messages');
-    const documentContainer = document.querySelector('.document-content-view');
+    // Setup once at app level - on the entire main content area
+    const mainContent = document.querySelector('.main-content');
     
     const tapHandler = (e) => {
       // Find which player should handle this click
@@ -4029,23 +4038,29 @@ class AdvancedTTSPlayer {
       const clickedControl = e.target.closest('.advanced-tts-controls, .btn-tts-control');
       if (clickedControl) return;
       
-      // Don't toggle if clicked on other buttons
+      // Don't toggle if clicked on other buttons (except tts-active which are ok)
       const clickedButton = e.target.closest('button:not(.tts-active), .btn-message-action, .message-controls');
       if (clickedButton) return;
       
-      // If clicked on a word, don't toggle (let word handlers work)
-      const clickedWord = e.target.closest('.ai-word, .tts-word');
-      if (clickedWord) return;
+      // Don't toggle if clicked on header buttons
+      const clickedHeader = e.target.closest('.chat-header, .document-header, .chat-actions, .document-actions');
+      if (clickedHeader) return;
+      
+      // Don't toggle if clicked on input area
+      const clickedInput = e.target.closest('.input-area, .input-container, #message-input, #send-btn, #voice-btn');
+      if (clickedInput) return;
+      
+      // If clicked on a word, don't toggle (let word handlers work) - CHECK THIS FIRST!
+      if (e.target.classList.contains('ai-word') || e.target.classList.contains('tts-word')) {
+        return; // Don't prevent default, let the word click handler work
+      }
       
       // Multi-tap detection on the target player
       targetPlayer.handleTap();
     };
     
-    if (messagesContainer) {
-      messagesContainer.addEventListener('click', tapHandler);
-    }
-    if (documentContainer) {
-      documentContainer.addEventListener('click', tapHandler);
+    if (mainContent) {
+      mainContent.addEventListener('click', tapHandler);
     }
     
     // Store globally so we only set it up once
