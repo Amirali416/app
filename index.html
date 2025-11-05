@@ -5,20 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>AI Chat</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="glass.css">
-  <link rel="stylesheet" href="glass-enhancements.css">
   <link rel="manifest" href="manifest.json">
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Particles Background - MUST BE FIRST -->
-  <div id="particles-js"></div>
-  
-  <script>
-    // Ensure particles container exists and log it
-    console.log('Particles container created:', document.getElementById('particles-js'));
-  </script>
-  
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container"></div>
 
@@ -114,7 +104,6 @@
               <option value="light">Light</option>
               <option value="dark">Dark</option>
               <option value="beige">Beige</option>
-              <option value="modern">Modern (Particles)</option>
             </select>
         </div>
         
@@ -429,121 +418,8 @@
     </div>
   </div>
 
-  <!-- Particles.js Library - Load FIRST -->
-  <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
-  
-  <!-- HTML2Canvas for Liquid Glass background capture -->
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-  
-  <!-- Particles Configuration - Initialize BEFORE app.js -->
-  <script src="particles-config.js"></script>
-  
-  <!-- Liquid Glass Components -->
-  <script src="container.js"></script>
-  <script src="button.js"></script>
-  
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="app.js"></script>
-  
-  <!-- SUPER FORCE Particles After App Load -->
-  <script>
-    (function() {
-      console.log('🔧 SUPER FORCING particles visibility...');
-      
-      // Wait for everything to load
-      function forceParticles() {
-        const container = document.getElementById('particles-js');
-        const app = document.getElementById('app');
-        
-        if (container) {
-          // FORCE container styles
-          container.style.cssText = `
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            z-index: 0 !important;
-            pointer-events: auto !important;
-            display: block !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-          `;
-          
-          const canvas = container.querySelector('canvas');
-          if (canvas) {
-            // FORCE canvas styles
-            canvas.style.cssText = `
-              position: absolute !important;
-              top: 0 !important;
-              left: 0 !important;
-              width: 100% !important;
-              height: 100% !important;
-              z-index: 0 !important;
-              pointer-events: auto !important;
-              display: block !important;
-              visibility: visible !important;
-              opacity: 1 !important;
-            `;
-            console.log('✅ Canvas forced to visible:', canvas.width, 'x', canvas.height);
-          } else {
-            console.warn('⚠️ Canvas not found, will retry...');
-            // Retry after delay
-            setTimeout(forceParticles, 100);
-            return;
-          }
-        }
-        
-        // FORCE app to be above particles
-        if (app) {
-          app.style.cssText = `
-            position: relative !important;
-            z-index: 1 !important;
-            background: transparent !important;
-            pointer-events: auto !important;
-          `;
-        }
-        
-        console.log('✅ Particles FORCED to display!');
-      }
-      
-      // Try immediately
-      forceParticles();
-      
-      // Try again after short delay
-      setTimeout(forceParticles, 100);
-      
-      // Try again after longer delay
-      setTimeout(forceParticles, 500);
-      
-      // Final attempt
-      setTimeout(forceParticles, 1000);
-    })();
-  </script>
-  
-  <!-- Debug Script -->
-  <script>
-    // Debug particles after everything loads
-    setTimeout(() => {
-      console.log('=== PARTICLES DEBUG ===');
-      const container = document.getElementById('particles-js');
-      console.log('Container exists:', !!container);
-      if (container) {
-        console.log('Container children:', container.children.length);
-        const canvas = container.querySelector('canvas');
-        console.log('Canvas exists:', !!canvas);
-        if (canvas) {
-          console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
-          console.log('Canvas style:', canvas.style.cssText);
-        }
-        console.log('Container style:', window.getComputedStyle(container).cssText);
-        console.log('Container z-index:', window.getComputedStyle(container).zIndex);
-      }
-      console.log('App element:', document.getElementById('app'));
-      console.log('===================');
-    }, 2000);
-  </script>
-  
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
