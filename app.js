@@ -308,7 +308,7 @@ class AIChatApp {
     this.AVALAI_API_KEY = localStorage.getItem("avalai_api_key");
     this.chatProvider = localStorage.getItem("chat_provider") || "gemini";
     this.ttsProvider = localStorage.getItem("tts_provider") || "gemini";
-    this.theme = localStorage.getItem("theme") || "beige";
+    this.theme = localStorage.getItem("theme") || "light";
     this.fontSize = localStorage.getItem("font_size") || "medium";
     this.boldText = localStorage.getItem("bold_text") === "true";
     this.chats = JSON.parse(localStorage.getItem("chats")) || [];
@@ -589,7 +589,7 @@ class AIChatApp {
     this.translateSelectionBtn.addEventListener('click', () => this.handleTranslateButtonClick());
     document.addEventListener('click', (e) => {
       if (!this.translateSelectionBtn.contains(e.target)) this.hideTranslateButton();
-      if (this.sidebar.classList.contains("mobile-open") && !this.sidebar.contains(e.target) && e.target !== this.menuToggle && !this.menuToggle.contains(e.target)) this.hideSidebar();
+      if (this.sidebar.classList.contains("active") && !this.sidebar.contains(e.target) && e.target !== this.menuToggle && !this.menuToggle.contains(e.target)) this.hideSidebar();
     });
     this.currentChatLeitnerBtn?.addEventListener("click", () => this.openLeitnerModal(this.currentChatId));
     this.closeLeitnerBtn.addEventListener("click", () => this.closeLeitnerModal());
@@ -797,7 +797,7 @@ class AIChatApp {
 
   applyTheme(theme) {
     // Remove all theme classes
-    document.body.classList.remove('theme-light', 'theme-dark', 'theme-beige', 'theme-modern');
+    document.body.classList.remove('theme-light', 'theme-dark', 'theme-blue', 'theme-purple', 'theme-beige');
     
     // Add selected theme class
     document.body.classList.add(`theme-${theme}`);
@@ -2806,13 +2806,11 @@ Be thorough and comprehensive.`;
   }
 
   toggleSidebar() {
-      this.sidebar.classList.toggle("mobile-open");
-      this.app.classList.toggle("sidebar-open");
+      this.sidebar.classList.toggle("active");
   }
 
   hideSidebar() {
-      this.sidebar.classList.remove("mobile-open");
-      this.app.classList.remove("sidebar-open");
+      this.sidebar.classList.remove("active");
   }
 
   scrollToBottom() {
