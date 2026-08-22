@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ai-chat-v9';
+const CACHE_NAME = 'ai-chat-v10';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -11,6 +11,13 @@ const urlsToCache = [
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png'
+];
+
+const RUNTIME_SCRIPTS = [
+  'provider-ui-patch.js',
+  'provider-bridge.js',
+  'provider-runtime-fixes.js',
+  'provider-local-detect.js'
 ];
 
 self.addEventListener('install', event => {
@@ -34,40 +41,83 @@ self.addEventListener('activate', event => {
   );
 });
 
-async function buildInjectedIndexResponse(request) {
-  const networkResponse = await fetch(request);
-  if (!networkResponse.ok) return networkResponse;
+function stripLegacyPuter(html) {
+  return html.replace(
+    /\s*<!-- Puter\.js SDK for TTS -->\s*<script[^>]+src=["']https:\/\/js\.puter\.com\/v2\/["'][^>]*><\/script>\s*/gi,
+    '\n'
+  );
+}
 
-  let html = await networkResponse.text();
-  html = html.replace(/\s*<!-- Puter\.js SDK for TTS -->\s*<script[^>]+src=["']https:\/\/js\.puter\.com\/v2\/["'][^>]*><\/script>\s*/gi, '\n');
+function injectRuntimeScripts(html) {
+  let result = stripLegacyPuter(html);
+  const tags = RUNTIME_SCRIPTS
+    .map(name => `<script src="${name}"></script>`)
+    .join('\n  ');
 
-  const marker = '<script src="app.js"></script>';
-  const providerUi = '<script src="provider-ui-patch.js"></script>';
-  const providerRuntime = '<script src="provider-bridge.js"></script>';
-  const runtimeFixes = '<script src="provider-runtime-fixes.js"></script>';
-  const localDetect = '<script src="provider-local-detect.js"></script>';
-
-  if (html.includes(marker)) {
-    html = html.replace(
-      marker,
-      `${marker}\n  ${providerUi}\n  ${providerRuntime}\n  ${runtimeFixes}\n  ${localDetect}`
-    );
-  }
-
-  return new Response(html, {
-    status: networkResponse.status,
-    statusText: networkResponse.statusText,
-    headers: networkResponse.headers
+  // Remove any previously injected copies before inserting exactly one set.
+  RUNTIME_SCRIPTS.forEach(name => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(`\\s*<script[^>]+src=["']${escaped}["'][^>]*><\\/script>\\s*`, 'gi'), '\n');
   });
+
+  if (result.includes('</head>')) {
+    return result.replace('</head>', `  ${tags}\n</head>`);
+  }
+  if (result.includes('</body>')) {
+    return result.replace('</body>', `  ${tags}\n</body>`);
+  }
+  return `${result}\n${tags}\n`;
+}
+
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch (_) {
+    return caches.match(request);
+  }
+}
+
+async function handleNavigation(request) {
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    if (!response.ok) return caches.match('/index.html');
+    const html = await response.text();
+    const injected = injectRuntimeScripts(html);
+    const headers = new Headers(response.headers);
+    headers.set('Cache-Control', 'no-store');
+    return new Response(injected, {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    });
+  } catch (_) {
+    const cached = await caches.match('/index.html');
+    if (!cached) throw _;
+    const html = await cached.text();
+    return new Response(injectRuntimeScripts(html), {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }
+    });
+  }
 }
 
 self.addEventListener('fetch', event => {
   const request = event.request;
+  const url = new URL(request.url);
 
   if (request.mode === 'navigate') {
-    event.respondWith(
-      buildInjectedIndexResponse(request).catch(() => caches.match('/index.html'))
-    );
+    event.respondWith(handleNavigation(request));
+    return;
+  }
+
+  // Always fetch JS from the network first so a new provider bridge cannot remain stale.
+  if (url.origin === self.location.origin && url.pathname.endsWith('.js')) {
+    event.respondWith(networkFirst(request));
     return;
   }
 
