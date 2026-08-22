@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ai-chat-v4';
+const CACHE_NAME = 'ai-chat-v6';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -35,13 +35,24 @@ self.addEventListener('activate', event => {
 async function buildInjectedIndexResponse(request) {
   const networkResponse = await fetch(request);
   if (!networkResponse.ok) return networkResponse;
-  const html = await networkResponse.text();
+
+  let html = await networkResponse.text();
+
+  // Remove the legacy Puter SDK from the delivered page. The app no longer uses it.
+  html = html.replace(/\s*<!-- Puter\.js SDK for TTS -->\s*<script[^>]+src=["']https:\/\/js\.puter\.com\/v2\/["'][^>]*><\/script>\s*/gi, '\n');
+
   const marker = '<script src="app.js"></script>';
-  const injection = `${marker}\n  <script src="provider-bridge.js"></script>\n  <script src="provider-ui-patch.js"></script>`;
-  if (!html.includes(marker) || html.includes('provider-bridge.js')) {
-    return new Response(html, { status: networkResponse.status, statusText: networkResponse.statusText, headers: networkResponse.headers });
+  const providerUi = '<script src="provider-ui-patch.js"></script>';
+  const providerRuntime = '<script src="provider-bridge.js"></script>';
+
+  if (html.includes(marker)) {
+    html = html.replace(
+      marker,
+      `${marker}\n  ${providerUi}\n  ${providerRuntime}`
+    );
   }
-  return new Response(html.replace(marker, injection), {
+
+  return new Response(html, {
     status: networkResponse.status,
     statusText: networkResponse.statusText,
     headers: networkResponse.headers
@@ -50,6 +61,7 @@ async function buildInjectedIndexResponse(request) {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
+
   if (request.mode === 'navigate') {
     event.respondWith(
       buildInjectedIndexResponse(request).catch(() => caches.match('/index.html'))
