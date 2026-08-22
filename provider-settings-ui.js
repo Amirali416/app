@@ -12,7 +12,64 @@
   function style() {
     if (document.getElementById('provider-settings-ui-style')) return;
     const s = document.createElement('style'); s.id = 'provider-settings-ui-style';
-    s.textContent = '.psui{border-top:1px solid rgba(127,127,127,.18);margin-top:12px;padding-top:12px}.psui h4{margin:0 0 8px;font-size:13px}.psui-note{font-size:11px;color:#777;display:block;margin:4px 0 8px}.psui-row{display:flex;gap:8px;margin:6px 0}.psui-row input{flex:1;min-width:0}.psui-btn{white-space:nowrap}.psui-status{font-size:11px;min-height:16px;display:block;margin-top:5px}.psui-ok{color:#238636}.psui-err{color:#c62828}';
+    s.textContent = `
+      /* Provider settings must remain usable on short desktop/laptop screens. */
+      #settings-modal .modal-content {
+        display: flex !important;
+        flex-direction: column !important;
+        max-height: min(92vh, 900px) !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+      }
+      #settings-modal .modal-scroll {
+        flex: 1 1 auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        padding-right: 6px;
+      }
+      #settings-modal .modal-buttons-footer {
+        flex: 0 0 auto !important;
+        position: relative !important;
+        z-index: 2;
+        background: inherit;
+      }
+      #provider-settings-ui {
+        width: 100%;
+        min-width: 0;
+        padding-bottom: 10px;
+      }
+      #provider-settings-ui .psui {
+        width: 100%;
+        min-width: 0;
+      }
+      #provider-settings-ui input {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+      }
+      #provider-settings-ui .psui-row {
+        display: flex;
+        align-items: stretch;
+        width: 100%;
+        min-width: 0;
+      }
+      #provider-settings-ui .psui-row input {
+        flex: 1 1 auto;
+      }
+      #provider-settings-ui .psui-btn {
+        flex: 0 0 auto;
+      }
+      .psui{border-top:1px solid rgba(127,127,127,.18);margin-top:12px;padding-top:12px}.psui h4{margin:0 0 8px;font-size:13px}.psui-note{font-size:11px;color:#777;display:block;margin:4px 0 8px}.psui-row{display:flex;gap:8px;margin:6px 0}.psui-row input{flex:1;min-width:0}.psui-btn{white-space:nowrap}.psui-status{font-size:11px;min-height:16px;display:block;margin-top:5px}.psui-ok{color:#238636}.psui-err{color:#c62828}
+      @media (max-width: 600px) {
+        #settings-modal .modal-content { max-height: 94vh !important; width: calc(100vw - 20px) !important; }
+        #provider-settings-ui .psui-row { flex-direction: column; }
+        #provider-settings-ui .psui-row .psui-btn { width: 100%; }
+      }
+    `;
     document.head.appendChild(s);
   }
 
