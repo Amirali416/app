@@ -20,26 +20,23 @@
     try {
       const u = new URL(url);
       return u.protocol === 'http:' && (
-        u.hostname === 'localhost' ||
-        u.hostname === '127.0.0.1' ||
-        u.hostname === '::1' ||
-        /^192\.168\./.test(u.hostname) ||
-        /^10\./.test(u.hostname) ||
-        /^172\.(1[6-9]|2\d|3[0-1])\./.test(u.hostname)
+        u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1' ||
+        /^192\.168\./.test(u.hostname) || /^10\./.test(u.hostname) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(u.hostname)
       );
-    } catch (_) {
-      return false;
-    }
+    } catch (_) { return false; }
   };
 
   const candidates = () => {
     const saved = localStorage.getItem(STORAGE.baseUrl) || '';
     const last = localStorage.getItem(STORAGE.last) || '';
     const list = [
+      'http://127.0.0.1:8090/v1',
+      'http://localhost:8090/v1',
       'http://127.0.0.1:8080/v1',
       'http://localhost:8080/v1',
       normalize(last),
       normalize(saved),
+      'http://192.168.88.50:8090/v1',
       'http://192.168.88.50:8080/v1'
     ].filter(Boolean);
     return [...new Set(list)];
@@ -66,9 +63,7 @@
     return normalized;
   }
 
-  function getModelId(model) {
-    return model?.id || model?.name || '';
-  }
+  function getModelId(model) { return model?.id || model?.name || ''; }
 
   function populateModelList(inputId, models) {
     const input = document.getElementById(inputId);
@@ -92,12 +87,11 @@
     if (!input) return;
     const ids = models.map(getModelId).filter(Boolean);
     const current = String(input.value || '').trim();
-    if (!current && ids.length === 1) {
+    const saved = localStorage.getItem(storageKey) || '';
+    if (!current && saved) input.value = saved;
+    else if (!current && ids.length === 1) {
       input.value = ids[0];
       localStorage.setItem(storageKey, ids[0]);
-    } else if (!current) {
-      const saved = localStorage.getItem(storageKey) || '';
-      if (saved) input.value = saved;
     }
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -106,123 +100,85 @@
   async function probe(baseUrl) {
     const normalized = normalize(baseUrl);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
+    const timeout = setTimeout(() => controller.abort(), 4000);
     try {
       const options = {
         method: 'GET',
         headers: { Accept: 'application/json' },
         cache: 'no-store',
+        credentials: 'omit',
         signal: controller.signal
       };
       if (isPrivateHttp(normalized)) options.targetAddressSpace = 'local';
-
       const response = await fetch(`${normalized}/models`, options);
       if (!response.ok) {
         const body = await response.text().catch(() => '');
         throw new Error(`HTTP ${response.status}${body ? ` — ${body.slice(0, 180)}` : ''}`);
       }
       const data = await response.json();
-      const models = Array.isArray(data?.data) ? data.data : [];
-      return { baseUrl: normalized, models };
+      return { baseUrl: normalized, models: Array.isArray(data?.data) ? data.data : [] };
     } catch (error) {
       if (error?.name === 'AbortError') throw new Error('Connection timed out');
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
+      const name = error?.name ? `${error.name}: ` : '';
+      throw new Error(`${name}${error?.message || 'Network request failed'}`);
+    } finally { clearTimeout(timeout); }
   }
 
   async function autoDetect() {
     const button = document.getElementById('local-detect-btn');
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Detecting...';
-    }
-
+    if (button) { button.disabled = true; button.textContent = 'Detecting...'; }
     const list = candidates();
     setStatus(`Checking ${list.length} local endpoint(s)...`);
     const failures = [];
-
     try {
       for (const candidate of list) {
         try {
           const result = await probe(candidate);
           const baseUrl = writeBaseUrl(result.baseUrl);
-
-          populateModelList('generic-openai-llm-model', result.models);
-          populateModelList('generic-openai-tts-model', result.models);
-          populateModelList('generic-openai-stt-model', result.models);
+          ['generic-openai-llm-model','generic-openai-tts-model','generic-openai-stt-model'].forEach(id => populateModelList(id, result.models));
           syncModelInput(STORAGE.llm, 'generic-openai-llm-model', result.models);
           syncModelInput(STORAGE.tts, 'generic-openai-tts-model', result.models);
           syncModelInput(STORAGE.stt, 'generic-openai-stt-model', result.models);
-
-          const modelText = result.models.length
-            ? result.models.map(getModelId).filter(Boolean).join(', ')
-            : 'no models returned';
+          const modelText = result.models.map(getModelId).filter(Boolean).join(', ') || 'no models returned';
           setStatus(`Connected: ${baseUrl} — ${result.models.length} model(s): ${modelText}`, true);
-
           const genericStatus = document.getElementById('generic-provider-status');
-          if (genericStatus) {
-            genericStatus.textContent = `${result.models.length} local model(s) loaded`;
-            genericStatus.className = 'provider-bridge-status ok';
-          }
-
-          window.dispatchEvent(new CustomEvent('ai-local-server-detected', {
-            detail: { baseUrl, models: result.models }
-          }));
+          if (genericStatus) { genericStatus.textContent = `${result.models.length} local model(s) loaded`; genericStatus.className = 'provider-bridge-status ok'; }
+          window.dispatchEvent(new CustomEvent('ai-local-server-detected', { detail: result }));
           return result;
-        } catch (error) {
-          failures.push(`${candidate}: ${error?.message || 'failed'}`);
-        }
+        } catch (error) { failures.push(`${candidate}: ${error?.message || 'failed'}`); }
       }
       throw new Error(`No reachable OpenAI-compatible server. ${failures.join(' | ')}`);
-    } catch (error) {
-      setStatus(error.message, false);
-      return null;
-    } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = 'Detect Local Server';
-      }
-    }
+    } catch (error) { setStatus(error.message, false); return null; }
+    finally { if (button) { button.disabled = false; button.textContent = 'Detect Local Server'; } }
   }
 
   async function testManual() {
     const input = document.getElementById('generic-openai-base-url');
     const value = normalize(input?.value);
-    if (!value) {
-      setStatus('Enter a Base URL first.');
-      return;
-    }
+    if (!value) { setStatus('Enter a Base URL first.'); return; }
     try {
       setStatus(`Testing ${value}...`);
       const result = await probe(value);
       writeBaseUrl(result.baseUrl);
-      populateModelList('generic-openai-llm-model', result.models);
-      populateModelList('generic-openai-tts-model', result.models);
-      populateModelList('generic-openai-stt-model', result.models);
+      ['generic-openai-llm-model','generic-openai-tts-model','generic-openai-stt-model'].forEach(id => populateModelList(id, result.models));
       syncModelInput(STORAGE.llm, 'generic-openai-llm-model', result.models);
       syncModelInput(STORAGE.tts, 'generic-openai-tts-model', result.models);
       syncModelInput(STORAGE.stt, 'generic-openai-stt-model', result.models);
       setStatus(`Connected: ${result.baseUrl} — ${result.models.length} model(s) found`, true);
       return result;
-    } catch (error) {
-      setStatus(error.message, false);
-      return null;
-    }
+    } catch (error) { setStatus(error.message, false); return null; }
   }
 
   function inject() {
     const wrapper = document.getElementById('provider-bridge-ui');
     const baseInput = document.getElementById('generic-openai-base-url');
     if (!wrapper || !baseInput || document.getElementById('local-detect-section')) return;
-
     const section = document.createElement('div');
     section.id = 'local-detect-section';
     section.className = 'setting-section provider-bridge-subsection';
     section.innerHTML = `
       <p>Local Server Connection:</p>
-      <span class="provider-bridge-note">Automatic detection checks 127.0.0.1, localhost, the last successful server, your configured URL, and 192.168.88.50.</span>
+      <span class="provider-bridge-note">Uses the browser-compatible local bridge on port 8090 first, then direct llama-server on 8080.</span>
       <div class="provider-bridge-row" style="margin-top:8px; flex-wrap:wrap;">
         <button id="local-detect-btn" type="button" class="btn-secondary provider-bridge-refresh">Detect Local Server</button>
         <button id="local-test-btn" type="button" class="btn-secondary provider-bridge-refresh">Test Current URL</button>
@@ -230,11 +186,8 @@
       </div>
       <span id="local-detect-status" class="provider-bridge-status"></span>
     `;
-
     const apiKeySection = document.getElementById('generic-openai-api-key')?.closest('.setting-section');
-    if (apiKeySection) wrapper.insertBefore(section, apiKeySection);
-    else wrapper.appendChild(section);
-
+    if (apiKeySection) wrapper.insertBefore(section, apiKeySection); else wrapper.appendChild(section);
     document.getElementById('local-detect-btn')?.addEventListener('click', autoDetect);
     document.getElementById('local-test-btn')?.addEventListener('click', testManual);
     document.getElementById('local-use-manual-btn')?.addEventListener('click', () => {
@@ -246,6 +199,5 @@
 
   const observer = new MutationObserver(inject);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject, { once: true });
-  else inject();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject, { once: true }); else inject();
 })();
