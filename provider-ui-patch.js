@@ -1,29 +1,59 @@
 (() => {
   'use strict';
 
-  function getAppClass() {
-    try { return Function('return AIChatApp')(); } catch (_) { return null; }
-  }
+  // app.js is a classic script, so AIChatApp is available as a global lexical binding.
+  // Export it explicitly so the provider runtime bridge can access it reliably.
+  try {
+    if (typeof AIChatApp !== 'undefined') window.AIChatApp = AIChatApp;
+  } catch (_) {}
 
-  function addOption(select, value, label) {
-    if (!select || select.querySelector(`option[value="${value}"]`)) return;
+  const labels = {
+    gemini: 'Google Gemini',
+    avalai: 'AvalAI',
+    openrouter: 'OpenRouter',
+    openai_compatible: 'OpenAI-Compatible / Local or Custom Server'
+  };
+
+  function ensureOption(select, value, label) {
+    if (!select) return;
+    const existing = select.querySelector(`option[value="${value}"]`);
+    if (existing) {
+      existing.textContent = label;
+      return;
+    }
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
     select.appendChild(option);
   }
 
-  const AppClass = getAppClass();
-  if (!AppClass || AppClass.__providerUiPatched) return;
-  AppClass.__providerUiPatched = true;
+  function cleanSelect(select, options) {
+    if (!select) return;
+    Array.from(select.options).forEach(option => {
+      if (option.value === 'puter' || /Puter/i.test(option.textContent || '')) option.remove();
+    });
+    Object.entries(options).forEach(([value, label]) => ensureOption(select, value, label));
+  }
 
-  const originalInitElements = AppClass.prototype.initElements;
-  AppClass.prototype.initElements = function(...args) {
-    const result = originalInitElements.apply(this, args);
-    addOption(this.chatProviderSelect, 'openai_compatible', 'OpenAI-Compatible / Local Network');
-    addOption(this.chatProviderSelect, 'openrouter', 'OpenRouter');
-    addOption(this.ttsProviderSelect, 'openai_compatible', 'OpenAI-Compatible / Local Network');
-    addOption(this.ttsProviderSelect, 'openrouter', 'OpenRouter');
-    return result;
-  };
+  function normalizeCurrentProvider() {
+    if (localStorage.getItem('chat_provider') === 'puter') localStorage.setItem('chat_provider', 'openrouter');
+    if (localStorage.getItem('tts_provider') === 'puter') localStorage.setItem('tts_provider', 'openrouter');
+    if (localStorage.getItem('stt_provider') === 'puter') localStorage.setItem('stt_provider', 'browser');
+  }
+
+  function applyProviderUi() {
+    normalizeCurrentProvider();
+    const chat = document.getElementById('chat-provider-select');
+    const tts = document.getElementById('tts-provider-select');
+    cleanSelect(chat, labels);
+    cleanSelect(tts, labels);
+    const legacyTts = Array.from(tts?.options || []).find(o => o.value === 'browser');
+    if (legacyTts) legacyTts.textContent = 'Browser TTS';
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyProviderUi, { once: true });
+  } else {
+    applyProviderUi();
+  }
 })();
