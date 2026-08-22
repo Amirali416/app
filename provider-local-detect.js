@@ -30,13 +30,10 @@
     const saved = localStorage.getItem(STORAGE.baseUrl) || '';
     const last = localStorage.getItem(STORAGE.last) || '';
     const list = [
-      'http://127.0.0.1:8090/v1',
-      'http://localhost:8090/v1',
       'http://127.0.0.1:8080/v1',
       'http://localhost:8080/v1',
       normalize(last),
       normalize(saved),
-      'http://192.168.88.50:8090/v1',
       'http://192.168.88.50:8080/v1'
     ].filter(Boolean);
     return [...new Set(list)];
@@ -178,7 +175,7 @@
     section.className = 'setting-section provider-bridge-subsection';
     section.innerHTML = `
       <p>Local Server Connection:</p>
-      <span class="provider-bridge-note">Uses the browser-compatible local bridge on port 8090 first, then direct llama-server on 8080.</span>
+      <span class="provider-bridge-note">Automatic detection checks 127.0.0.1:8080, localhost:8080, the last successful server, your configured URL, and 192.168.88.50:8080.</span>
       <div class="provider-bridge-row" style="margin-top:8px; flex-wrap:wrap;">
         <button id="local-detect-btn" type="button" class="btn-secondary provider-bridge-refresh">Detect Local Server</button>
         <button id="local-test-btn" type="button" class="btn-secondary provider-bridge-refresh">Test Current URL</button>
