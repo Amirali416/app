@@ -57,6 +57,30 @@
     });
   }
 
+  function normalizeDictionaryResult(result) {
+    const meanings = Array.isArray(result?.meanings) ? result.meanings : [];
+    const synonyms = Array.isArray(result?.synonyms) ? result.synonyms : [];
+    const antonyms = Array.isArray(result?.antonyms) ? result.antonyms : [];
+
+    return {
+      meanings: meanings.map(item => ({
+        text: String(item?.text ?? item?.meaning ?? '').trim(),
+        type: String(item?.type ?? item?.partOfSpeech ?? item?.pos ?? '').trim()
+      })).filter(item => item.text),
+      synonyms: synonyms.map(value => String(value ?? '').trim()).filter(Boolean),
+      antonyms: antonyms.map(value => String(value ?? '').trim()).filter(Boolean)
+    };
+  }
+
+  function extractJson(content) {
+    let text = String(content || '').trim();
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const first = text.indexOf('{');
+    const last = text.lastIndexOf('}');
+    if (first >= 0 && last > first) text = text.slice(first, last + 1);
+    return JSON.parse(text);
+  }
+
   function patchWordMeaning(AppClass) {
     AppClass.prototype.getWordMeaningGenericOpenAI = async function(word) {
       const cfg = this.getProviderConfig();
@@ -65,10 +89,59 @@
       }
 
       const model = cfg.genericLlmModel;
-      const translationOnly = looksLikeTranslationModel(model);
-      const prompt = translationOnly
-        ? `Translate the English word "${word}" into Persian (Farsi). Return only the natural Persian translation(s), separated by commas if there is more than one. Do not explain, define, transliterate, or answer in English.`
-        : `You are an expert English-Persian dictionary. Analyze the word "${word}". Return strict JSON only with keys meanings, synonyms, antonyms. meanings must be an array of objects with text and type. Each meaning text MUST be Persian. type MUST be a Persian part of speech. Provide 3-5 common meanings and useful synonyms/antonyms.`;
+      const translationModel = looksLikeTranslationModel(model);
+
+      const prompt = translationModel
+        ? `You are translating ONE English dictionary entry into Persian/Farsi.
+
+Return ONLY one valid JSON object. Do not write markdown, explanations, or any text outside the JSON.
+
+The JSON structure MUST be EXACTLY:
+{
+  "meanings": [
+    {"text": "", "type": ""},
+    {"text": "", "type": ""}
+  ],
+  "synonyms": [],
+  "antonyms": []
+}
+
+Rules:
+1. Keep the keys exactly: meanings, synonyms, antonyms.
+2. meanings must contain the common Persian translations of the English word.
+3. meanings[].text MUST be Persian/Farsi.
+4. meanings[].type MUST be Persian, using terms such as اسم، فعل، صفت، قید، حرف اضافه، حرف ربط.
+5. synonyms and antonyms MUST remain English words.
+6. Do not add, remove, rename, or reorder the JSON keys.
+7. Return 2-5 useful meanings when possible.
+8. Return useful English synonyms and antonyms when they are clear; otherwise use an empty array.
+9. Do not translate the JSON keys.
+
+English word:
+${word}`
+        : `You are an expert English-Persian dictionary.
+
+Return ONLY one valid JSON object with EXACTLY this structure:
+{
+  "meanings": [
+    {"text": "رایج‌ترین معنی فارسی", "type": "اسم"},
+    {"text": "معنی دوم فارسی", "type": "اسم"}
+  ],
+  "synonyms": ["synonym1", "synonym2"],
+  "antonyms": ["antonym1", "antonym2"]
+}
+
+Rules:
+1. Keep the keys exactly: meanings, synonyms, antonyms.
+2. meanings[].text MUST be Persian.
+3. meanings[].type MUST be Persian.
+4. synonyms and antonyms MUST be English.
+5. Return 3-5 common meanings when possible.
+6. Return useful synonyms and antonyms when applicable.
+7. JSON only; no markdown or explanation.
+
+English word:
+${word}`;
 
       try {
         const response = await fetch(`${normalizeBaseUrl(cfg.genericBaseUrl)}/chat/completions`, {
@@ -78,44 +151,30 @@
             model,
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.2,
-            ...(translationOnly ? {} : { response_format: { type: 'json_object' } })
+            top_p: 0.6,
+            top_k: 20,
+            repetition_penalty: 1.05,
+            max_tokens: 512
           })
         });
 
         if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          throw new Error(`Dictionary request failed (${response.status}): ${text.slice(0, 400)}`);
+          const body = await response.text().catch(() => '');
+          throw new Error(`Dictionary request failed (${response.status}): ${body.slice(0, 500)}`);
         }
 
         const data = await response.json();
         const content = String(data?.choices?.[0]?.message?.content || '').trim();
         if (!content) throw new Error('The local model returned an empty response.');
 
-        if (translationOnly) {
-          const cleaned = content
-            .replace(/^```[a-zA-Z]*\s*/i, '')
-            .replace(/```$/i, '')
-            .trim();
-          return {
-            meanings: cleaned
-              .split(/[,\n؛]+/)
-              .map(value => value.trim())
-              .filter(Boolean)
-              .map(text => ({ text, type: 'ترجمه' })),
-            synonyms: [],
-            antonyms: []
-          };
-        }
+        const result = normalizeDictionaryResult(extractJson(content));
+        if (!result.meanings.length) throw new Error('The local model returned no meanings.');
 
-        let jsonText = content;
-        const first = jsonText.indexOf('{');
-        const last = jsonText.lastIndexOf('}');
-        if (first >= 0 && last > first) jsonText = jsonText.slice(first, last + 1);
-        const result = JSON.parse(jsonText);
-        if (!Array.isArray(result.meanings)) throw new Error('Invalid dictionary JSON returned by model.');
+        const lowerWord = String(word).toLowerCase().trim();
+        await this.db.set('word_meanings', { word: lowerWord, value: result }).catch(() => {});
         return result;
       } catch (error) {
-        console.error('Generic word translation/meaning error:', error);
+        console.error('Generic word dictionary error:', error);
         return {
           meanings: [{ text: errorText(error), type: 'Error' }],
           synonyms: [],
