@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ai-chat-v10';
+const CACHE_NAME = 'ai-chat-v11';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -8,6 +8,8 @@ const urlsToCache = [
   '/provider-ui-patch.js',
   '/provider-runtime-fixes.js',
   '/provider-local-detect.js',
+  '/local-openai-bridge.py',
+  '/start-local-ai.bat',
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png'
@@ -50,22 +52,13 @@ function stripLegacyPuter(html) {
 
 function injectRuntimeScripts(html) {
   let result = stripLegacyPuter(html);
-  const tags = RUNTIME_SCRIPTS
-    .map(name => `<script src="${name}"></script>`)
-    .join('\n  ');
-
-  // Remove any previously injected copies before inserting exactly one set.
+  const tags = RUNTIME_SCRIPTS.map(name => `<script src="${name}"></script>`).join('\n  ');
   RUNTIME_SCRIPTS.forEach(name => {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     result = result.replace(new RegExp(`\\s*<script[^>]+src=["']${escaped}["'][^>]*><\\/script>\\s*`, 'gi'), '\n');
   });
-
-  if (result.includes('</head>')) {
-    return result.replace('</head>', `  ${tags}\n</head>`);
-  }
-  if (result.includes('</body>')) {
-    return result.replace('</body>', `  ${tags}\n</body>`);
-  }
+  if (result.includes('</head>')) return result.replace('</head>', `  ${tags}\n</head>`);
+  if (result.includes('</body>')) return result.replace('</body>', `  ${tags}\n</body>`);
   return `${result}\n${tags}\n`;
 }
 
@@ -90,11 +83,7 @@ async function handleNavigation(request) {
     const injected = injectRuntimeScripts(html);
     const headers = new Headers(response.headers);
     headers.set('Cache-Control', 'no-store');
-    return new Response(injected, {
-      status: response.status,
-      statusText: response.statusText,
-      headers
-    });
+    return new Response(injected, { status: response.status, statusText: response.statusText, headers });
   } catch (_) {
     const cached = await caches.match('/index.html');
     if (!cached) throw _;
@@ -109,19 +98,13 @@ async function handleNavigation(request) {
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
-
   if (request.mode === 'navigate') {
     event.respondWith(handleNavigation(request));
     return;
   }
-
-  // Always fetch JS from the network first so a new provider bridge cannot remain stale.
   if (url.origin === self.location.origin && url.pathname.endsWith('.js')) {
     event.respondWith(networkFirst(request));
     return;
   }
-
-  event.respondWith(
-    caches.match(request).then(cached => cached || fetch(request))
-  );
+  event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
 });
