@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ai-chat-v8';
+const CACHE_NAME = 'ai-chat-v9';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -7,6 +7,7 @@ const urlsToCache = [
   '/provider-bridge.js',
   '/provider-ui-patch.js',
   '/provider-runtime-fixes.js',
+  '/provider-local-detect.js',
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png'
@@ -38,19 +39,18 @@ async function buildInjectedIndexResponse(request) {
   if (!networkResponse.ok) return networkResponse;
 
   let html = await networkResponse.text();
-
-  // Remove the legacy Puter SDK from the delivered page. The app no longer uses it.
   html = html.replace(/\s*<!-- Puter\.js SDK for TTS -->\s*<script[^>]+src=["']https:\/\/js\.puter\.com\/v2\/["'][^>]*><\/script>\s*/gi, '\n');
 
   const marker = '<script src="app.js"></script>';
   const providerUi = '<script src="provider-ui-patch.js"></script>';
   const providerRuntime = '<script src="provider-bridge.js"></script>';
   const runtimeFixes = '<script src="provider-runtime-fixes.js"></script>';
+  const localDetect = '<script src="provider-local-detect.js"></script>';
 
   if (html.includes(marker)) {
     html = html.replace(
       marker,
-      `${marker}\n  ${providerUi}\n  ${providerRuntime}\n  ${runtimeFixes}`
+      `${marker}\n  ${providerUi}\n  ${providerRuntime}\n  ${runtimeFixes}\n  ${localDetect}`
     );
   }
 
