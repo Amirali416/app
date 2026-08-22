@@ -10,6 +10,17 @@
     stt: 'generic_openai_stt_model'
   };
 
+  const defaults = {
+    genericBaseUrl: 'http://127.0.0.1:8080/v1',
+    genericLlmModel: '', genericTtsModel: '', genericSttModel: '',
+    sttProvider: 'browser'
+  };
+
+  const getStored = (key, fallback = '') => {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value;
+  };
+
   const normalize = (raw) => {
     let value = String(raw || '').trim().replace(/\/+$/, '');
     if (!value) return '';
@@ -21,9 +32,15 @@
       const u = new URL(url);
       return u.protocol === 'http:' && (
         u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1' ||
-        /^192\.168\./.test(u.hostname) || /^10\./.test(u.hostname) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(u.hostname)
+        /^192\.168\./.test(u.hostname) || /^10\./.test(u.hostname) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(u.hostname)
       );
     } catch (_) { return false; }
+  };
+
+  const isChromeLike = () => {
+    const ua = navigator.userAgent || '';
+    return /Chrome\//.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua);
   };
 
   const candidates = () => {
@@ -94,6 +111,16 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function classifyNetworkError(error, url) {
+    const message = String(error?.message || '').toLowerCase();
+    if (isChromeLike() && isPrivateHttp(url) &&
+        (message.includes('failed to fetch') || message.includes('networkerror') ||
+         message.includes('cors') || message.includes('private network'))) {
+      return `Chrome blocked access to ${url}. This is usually Chrome Local Network Access/CORS permission. Allow Local Network Access for this site, then try Detect again. If the prompt never appears, enable the server's CORS/PNA response (Access-Control-Allow-Private-Network: true).`;
+    }
+    return `${error?.name ? `${error.name}: ` : ''}${error?.message || 'Network request failed'}`;
+  }
+
   async function probe(baseUrl) {
     const normalized = normalize(baseUrl);
     const controller = new AbortController();
@@ -106,6 +133,7 @@
         credentials: 'omit',
         signal: controller.signal
       };
+      // Chrome uses this hint for Private Network Access requests to local/private servers.
       if (isPrivateHttp(normalized)) options.targetAddressSpace = 'local';
       const response = await fetch(`${normalized}/models`, options);
       if (!response.ok) {
@@ -116,8 +144,7 @@
       return { baseUrl: normalized, models: Array.isArray(data?.data) ? data.data : [] };
     } catch (error) {
       if (error?.name === 'AbortError') throw new Error('Connection timed out');
-      const name = error?.name ? `${error.name}: ` : '';
-      throw new Error(`${name}${error?.message || 'Network request failed'}`);
+      throw new Error(classifyNetworkError(error, normalized));
     } finally { clearTimeout(timeout); }
   }
 
