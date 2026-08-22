@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ai-chat-v6';
+const CACHE_NAME = 'ai-chat-v7';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -6,6 +6,7 @@ const urlsToCache = [
   '/app.js',
   '/provider-bridge.js',
   '/provider-ui-patch.js',
+  '/provider-runtime-fixes.js',
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png'
@@ -44,11 +45,12 @@ async function buildInjectedIndexResponse(request) {
   const marker = '<script src="app.js"></script>';
   const providerUi = '<script src="provider-ui-patch.js"></script>';
   const providerRuntime = '<script src="provider-bridge.js"></script>';
+  const runtimeFixes = '<script src="provider-runtime-fixes.js"></script>';
 
   if (html.includes(marker)) {
     html = html.replace(
       marker,
-      `${marker}\n  ${providerUi}\n  ${providerRuntime}`
+      `${marker}\n  ${providerUi}\n  ${providerRuntime}\n  ${runtimeFixes}`
     );
   }
 
