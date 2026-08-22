@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ai-chat-v11';
+const CACHE_NAME = 'ai-chat-v12';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -8,8 +8,6 @@ const urlsToCache = [
   '/provider-ui-patch.js',
   '/provider-runtime-fixes.js',
   '/provider-local-detect.js',
-  '/local-openai-bridge.py',
-  '/start-local-ai.bat',
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png'
