@@ -1,20 +1,40 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'generic_openai_base_url';
-  const MODE_KEY = 'generic_openai_connection_mode';
-  const LAST_FOUND_KEY = 'generic_openai_last_detected_url';
+  const STORAGE = {
+    baseUrl: 'generic_openai_base_url',
+    mode: 'generic_openai_connection_mode',
+    last: 'generic_openai_last_detected_url',
+    llm: 'generic_openai_llm_model',
+    tts: 'generic_openai_tts_model',
+    stt: 'generic_openai_stt_model'
+  };
 
   const normalize = (raw) => {
     let value = String(raw || '').trim().replace(/\/+$/, '');
     if (!value) return '';
-    if (!/\/v1$/i.test(value)) value += '/v1';
-    return value;
+    return /\/v1$/i.test(value) ? value : `${value}/v1`;
+  };
+
+  const isPrivateHttp = (url) => {
+    try {
+      const u = new URL(url);
+      return u.protocol === 'http:' && (
+        u.hostname === 'localhost' ||
+        u.hostname === '127.0.0.1' ||
+        u.hostname === '::1' ||
+        /^192\.168\./.test(u.hostname) ||
+        /^10\./.test(u.hostname) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(u.hostname)
+      );
+    } catch (_) {
+      return false;
+    }
   };
 
   const candidates = () => {
-    const saved = localStorage.getItem(STORAGE_KEY) || '';
-    const last = localStorage.getItem(LAST_FOUND_KEY) || '';
+    const saved = localStorage.getItem(STORAGE.baseUrl) || '';
+    const last = localStorage.getItem(STORAGE.last) || '';
     const list = [
       'http://127.0.0.1:8080/v1',
       'http://localhost:8080/v1',
@@ -25,39 +45,91 @@
     return [...new Set(list)];
   };
 
-  async function probe(baseUrl) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1800);
-    try {
-      const response = await fetch(`${normalize(baseUrl)}/models`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        cache: 'no-store',
-        signal: controller.signal
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const models = Array.isArray(data?.data) ? data.data : [];
-      return { baseUrl: normalize(baseUrl), models };
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
   function setStatus(text, ok = false) {
     const el = document.getElementById('local-detect-status');
     if (!el) return;
     el.textContent = text;
-    el.className = `provider-bridge-status ${ok ? 'ok' : ''}`;
+    el.className = `provider-bridge-status ${ok ? 'ok' : 'error'}`;
   }
 
-  function setBaseUrl(url) {
+  function writeBaseUrl(url) {
     const normalized = normalize(url);
     const input = document.getElementById('generic-openai-base-url');
-    if (input) input.value = normalized;
-    localStorage.setItem(STORAGE_KEY, normalized);
-    localStorage.setItem(LAST_FOUND_KEY, normalized);
-    localStorage.setItem(MODE_KEY, 'auto');
+    if (input) {
+      input.value = normalized;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    localStorage.setItem(STORAGE.baseUrl, normalized);
+    localStorage.setItem(STORAGE.last, normalized);
+    localStorage.setItem(STORAGE.mode, 'auto');
+    return normalized;
+  }
+
+  function getModelId(model) {
+    return model?.id || model?.name || '';
+  }
+
+  function populateModelList(inputId, models) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const listId = input.getAttribute('list');
+    const list = listId ? document.getElementById(listId) : null;
+    if (!list) return;
+    list.innerHTML = '';
+    models.forEach(model => {
+      const id = getModelId(model);
+      if (!id) return;
+      const option = document.createElement('option');
+      option.value = id;
+      option.label = model?.name ? `${model.name} — ${id}` : id;
+      list.appendChild(option);
+    });
+  }
+
+  function syncModelInput(storageKey, inputId, models) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const ids = models.map(getModelId).filter(Boolean);
+    const current = String(input.value || '').trim();
+    if (!current && ids.length === 1) {
+      input.value = ids[0];
+      localStorage.setItem(storageKey, ids[0]);
+    } else if (!current) {
+      const saved = localStorage.getItem(storageKey) || '';
+      if (saved) input.value = saved;
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  async function probe(baseUrl) {
+    const normalized = normalize(baseUrl);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    try {
+      const options = {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: controller.signal
+      };
+      if (isPrivateHttp(normalized)) options.targetAddressSpace = 'local';
+
+      const response = await fetch(`${normalized}/models`, options);
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`HTTP ${response.status}${body ? ` — ${body.slice(0, 180)}` : ''}`);
+      }
+      const data = await response.json();
+      const models = Array.isArray(data?.data) ? data.data : [];
+      return { baseUrl: normalized, models };
+    } catch (error) {
+      if (error?.name === 'AbortError') throw new Error('Connection timed out');
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async function autoDetect() {
@@ -69,37 +141,41 @@
 
     const list = candidates();
     setStatus(`Checking ${list.length} local endpoint(s)...`);
+    const failures = [];
 
     try {
       for (const candidate of list) {
         try {
           const result = await probe(candidate);
-          setBaseUrl(result.baseUrl);
-          const modelText = result.models.length
-            ? `${result.models.length} model(s) found`
-            : 'Server found; no models were returned';
-          setStatus(`Connected: ${result.baseUrl} — ${modelText}`, true);
+          const baseUrl = writeBaseUrl(result.baseUrl);
 
-          const llm = document.getElementById('generic-openai-llm-model');
-          const datalist = document.getElementById('generic-openai-llm-models-list');
-          if (datalist) {
-            datalist.innerHTML = '';
-            result.models.forEach(model => {
-              const id = model?.id || model?.name;
-              if (!id) return;
-              const option = document.createElement('option');
-              option.value = id;
-              option.label = model?.name ? `${model.name} — ${id}` : id;
-              datalist.appendChild(option);
-            });
+          populateModelList('generic-openai-llm-model', result.models);
+          populateModelList('generic-openai-tts-model', result.models);
+          populateModelList('generic-openai-stt-model', result.models);
+          syncModelInput(STORAGE.llm, 'generic-openai-llm-model', result.models);
+          syncModelInput(STORAGE.tts, 'generic-openai-tts-model', result.models);
+          syncModelInput(STORAGE.stt, 'generic-openai-stt-model', result.models);
+
+          const modelText = result.models.length
+            ? result.models.map(getModelId).filter(Boolean).join(', ')
+            : 'no models returned';
+          setStatus(`Connected: ${baseUrl} — ${result.models.length} model(s): ${modelText}`, true);
+
+          const genericStatus = document.getElementById('generic-provider-status');
+          if (genericStatus) {
+            genericStatus.textContent = `${result.models.length} local model(s) loaded`;
+            genericStatus.className = 'provider-bridge-status ok';
           }
-          if (llm && !llm.value && result.models.length === 1) llm.value = result.models[0]?.id || result.models[0]?.name || '';
+
+          window.dispatchEvent(new CustomEvent('ai-local-server-detected', {
+            detail: { baseUrl, models: result.models }
+          }));
           return result;
-        } catch (_) {
-          // Try the next endpoint.
+        } catch (error) {
+          failures.push(`${candidate}: ${error?.message || 'failed'}`);
         }
       }
-      throw new Error('No reachable OpenAI-compatible server was found.');
+      throw new Error(`No reachable OpenAI-compatible server. ${failures.join(' | ')}`);
     } catch (error) {
       setStatus(error.message, false);
       return null;
@@ -108,6 +184,31 @@
         button.disabled = false;
         button.textContent = 'Detect Local Server';
       }
+    }
+  }
+
+  async function testManual() {
+    const input = document.getElementById('generic-openai-base-url');
+    const value = normalize(input?.value);
+    if (!value) {
+      setStatus('Enter a Base URL first.');
+      return;
+    }
+    try {
+      setStatus(`Testing ${value}...`);
+      const result = await probe(value);
+      writeBaseUrl(result.baseUrl);
+      populateModelList('generic-openai-llm-model', result.models);
+      populateModelList('generic-openai-tts-model', result.models);
+      populateModelList('generic-openai-stt-model', result.models);
+      syncModelInput(STORAGE.llm, 'generic-openai-llm-model', result.models);
+      syncModelInput(STORAGE.tts, 'generic-openai-tts-model', result.models);
+      syncModelInput(STORAGE.stt, 'generic-openai-stt-model', result.models);
+      setStatus(`Connected: ${result.baseUrl} — ${result.models.length} model(s) found`, true);
+      return result;
+    } catch (error) {
+      setStatus(error.message, false);
+      return null;
     }
   }
 
@@ -121,30 +222,30 @@
     section.className = 'setting-section provider-bridge-subsection';
     section.innerHTML = `
       <p>Local Server Connection:</p>
-      <span class="provider-bridge-note">Auto Detect first checks this computer (127.0.0.1 / localhost), then the last saved server and the default LAN address 192.168.88.50.</span>
-      <div class="provider-bridge-row" style="margin-top:8px;">
+      <span class="provider-bridge-note">Automatic detection checks 127.0.0.1, localhost, the last successful server, your configured URL, and 192.168.88.50.</span>
+      <div class="provider-bridge-row" style="margin-top:8px; flex-wrap:wrap;">
         <button id="local-detect-btn" type="button" class="btn-secondary provider-bridge-refresh">Detect Local Server</button>
+        <button id="local-test-btn" type="button" class="btn-secondary provider-bridge-refresh">Test Current URL</button>
         <button id="local-use-manual-btn" type="button" class="btn-secondary provider-bridge-refresh">Use Manual URL</button>
       </div>
       <span id="local-detect-status" class="provider-bridge-status"></span>
     `;
 
-    wrapper.insertBefore(section, wrapper.querySelector('#generic-openai-api-key')?.closest('.setting-section') || null);
+    const apiKeySection = document.getElementById('generic-openai-api-key')?.closest('.setting-section');
+    if (apiKeySection) wrapper.insertBefore(section, apiKeySection);
+    else wrapper.appendChild(section);
 
     document.getElementById('local-detect-btn')?.addEventListener('click', autoDetect);
+    document.getElementById('local-test-btn')?.addEventListener('click', testManual);
     document.getElementById('local-use-manual-btn')?.addEventListener('click', () => {
-      localStorage.setItem(MODE_KEY, 'manual');
+      localStorage.setItem(STORAGE.mode, 'manual');
       setStatus('Manual URL mode enabled.');
       baseInput.focus();
     });
   }
 
-  function patch() {
-    inject();
-  }
-
-  const observer = new MutationObserver(() => inject());
+  const observer = new MutationObserver(inject);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', patch, { once: true });
-  else patch();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject, { once: true });
+  else inject();
 })();
