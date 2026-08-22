@@ -16,6 +16,14 @@ MIME = {
     ".woff": "font/woff", ".woff2": "font/woff2"
 }
 
+PROVIDER_SCRIPTS = """
+<script src="provider-ui-patch.js"></script>
+<script src="provider-bridge.js"></script>
+<script src="provider-runtime-fixes.js"></script>
+<script src="provider-local-detect.js"></script>
+<script src="provider-settings-ui.js"></script>
+"""
+
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -77,6 +85,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
             return
         data = open(full, "rb").read()
+        if full.lower().endswith("index.html"):
+            html = data.decode("utf-8", errors="replace")
+            if "provider-settings-ui.js" not in html:
+                html = html.replace("</body>", PROVIDER_SCRIPTS + "\n</body>")
+            data = html.encode("utf-8")
         self.send_response(200)
         self.cors()
         self.send_header("Content-Type", MIME.get(os.path.splitext(full)[1].lower(), "application/octet-stream"))
